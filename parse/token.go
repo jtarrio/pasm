@@ -77,6 +77,7 @@ const (
 	ADC
 	ADD
 	AND
+	BYTE
 	CALL
 	CBW
 	CLC
@@ -94,7 +95,9 @@ const (
 	DEC
 	DIV
 	DW
+	DWORD
 	ESC
+	FAR
 	HLT
 	IDIV
 	IMUL
@@ -150,6 +153,7 @@ const (
 	MOV
 	MOVS
 	MUL
+	NEAR
 	NEG
 	NOP
 	NOT
@@ -177,6 +181,7 @@ const (
 	SCASB
 	SCASW
 	SHL
+	SHORT
 	SHR
 	STC
 	STD
@@ -185,6 +190,7 @@ const (
 	SUB
 	TEST
 	WAIT
+	WORD
 	XCHG
 	XLAT
 	XOR
@@ -192,9 +198,11 @@ const (
 
 var Keywords = []string{
 	"AAA", "AAD", "AAM", "AAS", "ADC", "ADD", "AND",
+	"BYTE",
 	"CALL", "CBW", "CLC", "CLD", "CLI", "CMC", "CMP", "CMPSB", "CMPSW", "CWD",
-	"DAA", "DAS", "DB", "DD", "DEC", "DIV", "DW",
+	"DAA", "DAS", "DB", "DD", "DEC", "DIV", "DW", "DWORD",
 	"ESC",
+	"FAR",
 	"HLT",
 	"IDIV", "IMUL", "IN", "INC", "INT", "INTO", "IRET",
 	"JA", "JAE", "JB", "JBE", "JC", "JCXZ", "JE", "JG", "JGE", "JL", "JLE", "JMP",
@@ -202,13 +210,13 @@ var Keywords = []string{
 	"JO", "JP", "JPE", "JPO", "JS", "JZ",
 	"LAHF", "LDS", "LEA", "LES", "LOCK", "LODSB", "LODSW", "LOOP", "LOOPE", "LOOPNE", "LOOPNZ", "LOOPZ",
 	"MOV", "MOVS", "MUL",
-	"NEG", "NOP", "NOT",
+	"NEAR", "NEG", "NOP", "NOT",
 	"OR", "ORG", "OUT",
 	"POP", "POPF", "PUSH", "PUSHF",
 	"RCL", "RCR", "REP", "REPE", "REPNE", "REPNZ", "REPZ", "RET", "ROL", "ROR",
-	"SAHF", "SAL", "SAR", "SBB", "SCASB", "SCASW", "SHL", "SHR", "STC", "STD", "STI", "STOS", "SUB",
+	"SAHF", "SAL", "SAR", "SBB", "SCASB", "SCASW", "SHL", "SHORT", "SHR", "STC", "STD", "STI", "STOS", "SUB",
 	"TEST",
-	"WAIT",
+	"WAIT", "WORD",
 	"XCHG", "XLAT", "XOR",
 }
 

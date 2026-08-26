@@ -1,0 +1,139 @@
+PASM grammar
+============
+
+source := [lines] [EOL+] EOF ;
+
+lines := line [EOL+ lines] ;
+
+line := org_line | labeled_statement | statement ;
+
+org_line := 'ORG' word ;
+
+labeled_statement := labeled_data_statement | label_definition | label_definition statement ;
+
+labeled_data_statement := label data_statement ;
+
+label_definition := label COLON ;
+
+label := IDENTIFIER ;
+
+statement := data_statement | op_statement ;
+
+data_statement := byte_data_statement | word_data_statement | dword_data_statement ;
+
+byte_data_statement := 'DB' byte_sequence ;
+byte_sequence := byte_sequence_element [COMMA byte_sequence] ;
+byte_sequence_element := byte | STRING ;
+byte := single_byte | single_byte '+' byte | single_byte '-' byte ;
+single_byte := NUMBER(0.255) | STRING(len=1) ;
+
+word_data_statement := 'DW' word_sequence ;
+word_sequence := word [COMMA word_sequence] ;
+word := single_word | single_word '+' word | single_word '-' word ;
+single_word := NUMBER | MINUS NUMBER | label ;
+
+dword_sequence := dword COMMA dword_sequence | dword ;
+dword_data_statement := 'DD' dword_sequence ;
+dword := word COLON word ;
+
+op_statement := [prefix] single_op ;
+
+prefix := 'LOCK' | 'REP' | 'REPE' | 'REPNE' | 'REPNZ' | 'REPZ';
+
+single_op :=
+    op_zero |
+    op_imm byte |
+    op_regmem reg_b |
+    op_regmem reg_w |
+    op_regmem mem_b |
+    op_regmem mem_w |
+    op_stack reg_w |
+    op_stack mem_w |
+    op_stack seg |
+    op_rotate reg_b COMMA '1' |
+    op_rotate reg_w COMMA '1' |
+    op_rotate mem_b COMMA '1' |
+    op_rotate mem_w COMMA '1' |
+    op_rotate reg_b COMMA 'CL' |
+    op_rotate reg_w COMMA 'CL' |
+    op_rotate mem_b COMMA 'CL' |
+    op_rotate mem_w COMMA 'CL' |
+    op_regmem_imm reg_b COMMA byte |
+    op_regmem_imm reg_w COMMA word |
+    op_regmem_regmem reg_b COMMA reg_b |
+    op_regmem_regmem reg_w COMMA reg_w |
+    op_regmem_regmem reg_b COMMA mem_b |
+    op_regmem_regmem reg_w COMMA mem_w |
+    op_load reg_w COMMA mem_w |
+    op_regmem_imm mem_b COMMA byte |
+    op_regmem_imm mem_w COMMA word |
+    op_regmem_regmem mem_b COMMA reg_b |
+    op_regmem_regmem mem_w COMMA reg_w |
+    op_mov seg COMMA reg_w |
+    op_mov seg COMMA mem_w |
+    op_mov reg_w COMMA seg |
+    op_mov mem_w COMMA seg |
+    op_ret ['NEAR'] word |
+    op_ret 'FAR' word |
+    op_ret ['NEAR'] |
+    op_ret 'FAR' |
+    op_call ['NEAR'] address |
+    op_call 'FAR' dword |
+    op_call ['NEAR'] reg_w |
+    op_call ['NEAR'] mem_w |
+    op_call 'FAR' mem_d |
+    op_jmp 'SHORT' address |
+    op_jmp ['NEAR'] address |
+    op_jmp 'FAR' dword |
+    op_jmp ['NEAR'] reg_w |
+    op_jmp ['NEAR'] mem_w |
+    op_jmp 'FAR' mem_d |
+    op_jmp_cond address |
+    op_port_in 'AL' COMMA byte |
+    op_port_in 'AX' COMMA byte |
+    op_port_in 'AL' COMMA 'DX' |
+    op_port_in 'AX' COMMA 'DX' |
+    op_port_out byte COMMA 'AL' |
+    op_port_out byte COMMA 'AX' |
+    op_port_out 'DX' COMMA 'AL' |
+    op_port_out 'DX' COMMA 'AX' ;
+
+reg_b := 'AL' | 'AH' | 'BL' | 'BH' | 'CL' | 'CH' | 'DL' | 'DH' ;
+reg_w := 'AX' | 'BX' | 'CX' | 'DX' | 'SI' | 'DI' | 'SP' | 'BP' ;
+seg := 'CS' | 'DS' | 'ES' | 'SS' ;
+mem_b := ['BYTE'] mem ;
+mem_w := ['WORD'] mem ;
+mem_d := ['DWORD'] mem ;
+mem := [seg COLON] mem_addr ;
+mem_addr := LBRACKET effective_address RBRACKET ;
+effective_address := address | ea_single | ea_double | ea_single_offset | ea_double_offset;
+ea_single := 'BX' | 'BP' | 'SI' | 'DI' ;
+ea_double :=
+    'BX' PLUS 'SI' | 'BP' PLUS 'SI' | 'BX' PLUS 'DI' | 'BP' PLUS 'DI' |
+    'SI' PLUS 'BX' | 'SI' PLUS 'BP' | 'DI' PLUS 'BX' | 'DI' PLUS 'BP' ;
+ea_single_offset := ea_single PLUS address | address PLUS ea_single | ea_single MINUS NUMBER | MINUS NUMBER PLUS ea_single ;
+ea_double_offset := ea_double PLUS address | address PLUS ea_double | ea_double MINUS NUMBER | MINUS NUMBER PLUS ea_double ;
+address := word ;
+
+op_zero :=
+    'AAA' | 'AAD' | 'AAM' | 'AAS' | 'CBW' | 'CLC' | 'CLD' | 'CLI' | 'CMC' | 'CMPSB' | 'CMPSW' | 'CWD' |
+    'DAA' | 'DAS' | 'HLT' | 'INTO' | 'IRET' | 'LAHF' | 'LODSB' | 'LODSW' | 'MOVSB' | 'MOVSW' | 'NOP' |
+    'POPF' | 'PUSHF' | 'SAHF' | 'SCASB' | 'SCASW' | 'STC' | 'STD' | 'STOSB' | 'STOSW' | 'STI' |
+    'WAIT' | 'XLAT' ;
+op_imm := 'INT';
+op_regmem := 'DEC' | 'DIV' | 'INC' | 'IDIV' | 'IMUL' | 'MUL' | 'NEG' | 'NOT' ;
+op_regmem_imm := 'ADC' | 'ADD' | 'AND' | 'CMP' | 'MOV' | 'OR' | 'SBB' | 'SUB' | 'TEST' | 'XOR' ;
+op_regmem_regmem := 'ADC' | 'ADD' | 'AND' | 'CMP' | 'MOV' | 'OR' | 'SBB' | 'SUB' | 'TEST' | 'XCHG' | 'XOR' ;
+op_stack := 'POP' | 'PUSH' ;
+op_rotate := 'RCL' | 'RCR' | 'ROL' | 'ROR' | 'SAL' | 'SAR' | 'SHL' | 'SHR' ;
+op_load := 'LDS' | 'LEA' | 'LES' ;
+op_mov := 'MOV' ;
+op_ret := 'RET' ;
+op_call := 'CALL' ;
+op_jmp := 'JMP' ;
+op_jmp_cond :=
+    'JA' | 'JAE' | 'JB' | 'JBE' | 'JC' | 'JCXZ' | 'JE' | 'JG' | 'JGE' | 'JL' | 'JLE' | 'JO' | 'JP' | 'JPE' | 'JPO' | 'JS' | 'JZ' |
+    'JNA' | 'JNAE' | 'JNB' | 'JNBE' | 'JNC' | 'JNE' | 'JNG' | 'JNGE' | 'JNL' | 'JNLE' | 'JNO' | 'JNP' | 'JNS' | 'JNZ' |
+    'LOOP' | 'LOOPE' | 'LOOPNE' | 'LOOPNZ' | 'LOOPZ';
+op_port_in := 'IN' ;
+op_port_out := 'OUT' ;
