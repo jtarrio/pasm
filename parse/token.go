@@ -1,5 +1,7 @@
 package parse
 
+import "fmt"
+
 type TokenType uint8
 
 const (
@@ -23,61 +25,88 @@ type Register uint8
 
 const (
 	AX Register = iota
-	BX
 	CX
 	DX
-	AL
-	AH
-	BL
-	BH
-	CL
-	CH
-	DL
-	DH
+	BX
+	SP
+	BP
 	SI
 	DI
-	BP
-	SP
+	AL
+	CL
+	DL
+	BL
+	AH
+	CH
+	DH
+	BH
 )
 
 var Registers = []string{
-	"AX", "BX", "CX", "DX",
-	"AL", "AH", "BL", "BH", "CL", "CH", "DL", "DH",
-	"SI", "DI", "BP", "SP",
+	"AX", "CX", "DX", "BX", "SP", "BP", "SI", "DI",
+	"AL", "CL", "DL", "BL", "AH", "CH", "DH", "BH",
 }
 
 func IsRegister(s string) (Register, bool) {
 	return isSymbol[Register](s, Registers)
 }
 
+func (r Register) String() string {
+	return Registers[r]
+}
+
 type Segment uint8
 
 const (
-	CS Segment = iota
-	DS
-	ES
+	ES Segment = iota
+	CS
 	SS
+	DS
 )
 
 var Segments = []string{
-	"CS", "DS", "ES", "SS",
+	"ES", "CS", "SS", "DS",
 }
 
 func IsSegment(s string) (Segment, bool) {
 	return isSymbol[Segment](s, Segments)
 }
 
+func (s Segment) String() string {
+	return Segments[s]
+}
+
 type Keyword uint8
 
 const (
-	AAA Keyword = iota
+	ORG Keyword = iota
+
+	BYTE
+	DWORD
+	FAR
+	NEAR
+	PTR
+	SHORT
+	WORD
+
+	DB
+	DD
+	DW
+
+	LOCK
+	REP
+	REPE
+	REPNE
+	REPNZ
+	REPZ
+
+	AAA
 	AAD
 	AAM
 	AAS
 	ADC
 	ADD
 	AND
-	BYTE
 	CALL
 	CBW
 	CLC
@@ -90,14 +119,9 @@ const (
 	CWD
 	DAA
 	DAS
-	DB
-	DD
 	DEC
 	DIV
-	DW
-	DWORD
 	ESC
-	FAR
 	HLT
 	IDIV
 	IMUL
@@ -142,7 +166,6 @@ const (
 	LDS
 	LEA
 	LES
-	LOCK
 	LODSB
 	LODSW
 	LOOP
@@ -151,14 +174,13 @@ const (
 	LOOPNZ
 	LOOPZ
 	MOV
-	MOVS
+	MOVSB
+	MOVSW
 	MUL
-	NEAR
 	NEG
 	NOP
 	NOT
 	OR
-	ORG
 	OUT
 	POP
 	POPF
@@ -166,12 +188,9 @@ const (
 	PUSHF
 	RCL
 	RCR
-	REP
-	REPE
-	REPNE
-	REPNZ
-	REPZ
 	RET
+	RETF
+	RETN
 	ROL
 	ROR
 	SAHF
@@ -181,47 +200,53 @@ const (
 	SCASB
 	SCASW
 	SHL
-	SHORT
 	SHR
 	STC
 	STD
 	STI
-	STOS
+	STOSB
+	STOSW
 	SUB
 	TEST
 	WAIT
-	WORD
 	XCHG
 	XLAT
 	XOR
 )
 
 var Keywords = []string{
+	"ORG",
+
+	"BYTE", "DWORD", "FAR", "NEAR", "PTR", "SHORT", "WORD",
+
+	"DB", "DD", "DW",
+
+	"LOCK", "REP", "REPE", "REPNE", "REPNZ", "REPZ",
+
 	"AAA", "AAD", "AAM", "AAS", "ADC", "ADD", "AND",
-	"BYTE",
-	"CALL", "CBW", "CLC", "CLD", "CLI", "CMC", "CMP", "CMPSB", "CMPSW", "CWD",
-	"DAA", "DAS", "DB", "DD", "DEC", "DIV", "DW", "DWORD",
+	"CALL", "CBW", "CLC", "CLD", "CLI", "CMC", "CMP", "CMPSB", "CMPSW", "CWD", "DAA", "DAS", "DEC", "DIV",
 	"ESC",
-	"FAR",
 	"HLT",
 	"IDIV", "IMUL", "IN", "INC", "INT", "INTO", "IRET",
-	"JA", "JAE", "JB", "JBE", "JC", "JCXZ", "JE", "JG", "JGE", "JL", "JLE", "JMP",
-	"JNA", "JNAE", "JNB", "JNBE", "JNC", "JNE", "JNG", "JNGE", "JNL", "JNLE", "JNO", "JNP", "JNS", "JNZ",
-	"JO", "JP", "JPE", "JPO", "JS", "JZ",
-	"LAHF", "LDS", "LEA", "LES", "LOCK", "LODSB", "LODSW", "LOOP", "LOOPE", "LOOPNE", "LOOPNZ", "LOOPZ",
-	"MOV", "MOVS", "MUL",
-	"NEAR", "NEG", "NOP", "NOT",
-	"OR", "ORG", "OUT",
+	"JA", "JAE", "JB", "JBE", "JC", "JCXZ", "JE", "JG", "JGE", "JL", "JLE", "JMP", "JNA", "JNAE", "JNB", "JNBE", "JNC", "JNE", "JNG", "JNGE", "JNL", "JNLE", "JNO", "JNP", "JNS", "JNZ", "JO", "JP", "JPE", "JPO", "JS", "JZ",
+	"LAHF", "LDS", "LEA", "LES", "LODSB", "LODSW", "LOOP", "LOOPE", "LOOPNE", "LOOPNZ", "LOOPZ",
+	"MOV", "MOVSB", "MOVSW", "MUL",
+	"NEG", "NOP", "NOT",
+	"OR", "OUT",
 	"POP", "POPF", "PUSH", "PUSHF",
-	"RCL", "RCR", "REP", "REPE", "REPNE", "REPNZ", "REPZ", "RET", "ROL", "ROR",
-	"SAHF", "SAL", "SAR", "SBB", "SCASB", "SCASW", "SHL", "SHORT", "SHR", "STC", "STD", "STI", "STOS", "SUB",
+	"RCL", "RCR", "RET", "RETF", "RETN", "ROL", "ROR",
+	"SAHF", "SAL", "SAR", "SBB", "SCASB", "SCASW", "SHL", "SHR", "STC", "STD", "STI", "STOSB", "STOSW", "SUB",
 	"TEST",
-	"WAIT", "WORD",
+	"WAIT",
 	"XCHG", "XLAT", "XOR",
 }
 
 func IsKeyword(s string) (Keyword, bool) {
 	return isSymbol[Keyword](s, Keywords)
+}
+
+func (k Keyword) String() string {
+	return Keywords[k]
 }
 
 func isSymbol[T ~uint8](s string, a []string) (T, bool) {
@@ -240,7 +265,42 @@ type Token struct {
 	Keyword    Keyword
 	Identifier string
 	Number     uint16
-	String     string
+	Str        string
 	Line       uint
 	Col        uint
+}
+
+func (t Token) String() string {
+	switch t.Type {
+	case EOF:
+		return "end of file"
+	case EOL:
+		return "end of line"
+	case LBRACKET:
+		return "left bracket"
+	case RBRACKET:
+		return "right bracket"
+	case PLUS:
+		return "plus sign"
+	case MINUS:
+		return "minus sign"
+	case COMMA:
+		return "comma"
+	case COLON:
+		return "colon"
+	case REGISTER:
+		return fmt.Sprintf("register %s", t.Register.String())
+	case SEGMENT:
+		return fmt.Sprintf("segment %s", t.Segment.String())
+	case KEYWORD:
+		return fmt.Sprintf("keyword %s", t.Keyword.String())
+	case IDENTIFIER:
+		return fmt.Sprintf("identifier %s", t.Identifier)
+	case NUMBER:
+		return fmt.Sprintf("number %d (%04xh)", t.Number, t.Number)
+	case STRING:
+		return fmt.Sprintf("string '%s'", t.Str)
+	default:
+		return fmt.Sprintf("token of unknown type %d", t.Type)
+	}
 }

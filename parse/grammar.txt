@@ -1,139 +1,122 @@
-PASM grammar
-============
+# PASM grammar
 
-source := [lines] [EOL+] EOF ;
+A program consists of a series of lines. A line may end with a comment; a comment starts with a semicolon and runs
+to the end of the line. Lines containing only whitespace and comments are ignored.
 
-lines := line [EOL+ lines] ;
+A line may contain an assembly directive, a data definition, a label definition, an instruction, or a label
+definition followed by an instruction.
 
-line := org_line | labeled_statement | statement ;
+Example:
 
-org_line := 'ORG' word ;
+```
+ORG 100h ; starts the program at address 100h
 
-labeled_statement := labeled_data_statement | label_definition | label_definition statement ;
+MOV AX, 1
+; Ends the program
+INT 20h
+```
 
-labeled_data_statement := label data_statement ;
+Numeric values may be bytes or words. Bytes can have values in the range -128..255. Words can have values in the range
+-32768..65535. Numbers can be expressed as decimal numbers, or as binary, octal, decimal or hexadecimal with
+the suffixes 'b', 'o', 'd', and 'h', respectively. A hexadecimal number may not start with a letter; add a zero on the
+left if necessary.
 
-label_definition := label COLON ;
+Examples: 12, 42, 127, 7Fh, 0CAFEh, 1001b, 777o.
 
-label := IDENTIFIER ;
+Strings are delimited with single quote signs ('). There are no escape characters.
 
-statement := data_statement | op_statement ;
+Examples: '', 'a', 'abcde'
 
-data_statement := byte_data_statement | word_data_statement | dword_data_statement ;
+## Assembly directives
 
-byte_data_statement := 'DB' byte_sequence ;
-byte_sequence := byte_sequence_element [COMMA byte_sequence] ;
-byte_sequence_element := byte | STRING ;
-byte := single_byte | single_byte '+' byte | single_byte '-' byte ;
-single_byte := NUMBER(0.255) | STRING(len=1) ;
+### `ORG` number
 
-word_data_statement := 'DW' word_sequence ;
-word_sequence := word [COMMA word_sequence] ;
-word := single_word | single_word '+' word | single_word '-' word ;
-single_word := NUMBER | MINUS NUMBER | label ;
+Changes the current position in memory to the given value.
 
-dword_sequence := dword COMMA dword_sequence | dword ;
-dword_data_statement := 'DD' dword_sequence ;
-dword := word COLON word ;
+Example: `ORG 100h`
 
-op_statement := [prefix] single_op ;
+## Data definitions
 
-prefix := 'LOCK' | 'REP' | 'REPE' | 'REPNE' | 'REPNZ' | 'REPZ';
+Data definitions start with a new label name and are followed by a `DB`, `DD`, or `DW` instruction.
 
-single_op :=
-    op_zero |
-    op_imm byte |
-    op_regmem reg_b |
-    op_regmem reg_w |
-    op_regmem mem_b |
-    op_regmem mem_w |
-    op_stack reg_w |
-    op_stack mem_w |
-    op_stack seg |
-    op_rotate reg_b COMMA '1' |
-    op_rotate reg_w COMMA '1' |
-    op_rotate mem_b COMMA '1' |
-    op_rotate mem_w COMMA '1' |
-    op_rotate reg_b COMMA 'CL' |
-    op_rotate reg_w COMMA 'CL' |
-    op_rotate mem_b COMMA 'CL' |
-    op_rotate mem_w COMMA 'CL' |
-    op_regmem_imm reg_b COMMA byte |
-    op_regmem_imm reg_w COMMA word |
-    op_regmem_regmem reg_b COMMA reg_b |
-    op_regmem_regmem reg_w COMMA reg_w |
-    op_regmem_regmem reg_b COMMA mem_b |
-    op_regmem_regmem reg_w COMMA mem_w |
-    op_load reg_w COMMA mem_w |
-    op_regmem_imm mem_b COMMA byte |
-    op_regmem_imm mem_w COMMA word |
-    op_regmem_regmem mem_b COMMA reg_b |
-    op_regmem_regmem mem_w COMMA reg_w |
-    op_mov seg COMMA reg_w |
-    op_mov seg COMMA mem_w |
-    op_mov reg_w COMMA seg |
-    op_mov mem_w COMMA seg |
-    op_ret ['NEAR'] word |
-    op_ret 'FAR' word |
-    op_ret ['NEAR'] |
-    op_ret 'FAR' |
-    op_call ['NEAR'] address |
-    op_call 'FAR' dword |
-    op_call ['NEAR'] reg_w |
-    op_call ['NEAR'] mem_w |
-    op_call 'FAR' mem_d |
-    op_jmp 'SHORT' address |
-    op_jmp ['NEAR'] address |
-    op_jmp 'FAR' dword |
-    op_jmp ['NEAR'] reg_w |
-    op_jmp ['NEAR'] mem_w |
-    op_jmp 'FAR' mem_d |
-    op_jmp_cond address |
-    op_port_in 'AL' COMMA byte |
-    op_port_in 'AX' COMMA byte |
-    op_port_in 'AL' COMMA 'DX' |
-    op_port_in 'AX' COMMA 'DX' |
-    op_port_out byte COMMA 'AL' |
-    op_port_out byte COMMA 'AX' |
-    op_port_out 'DX' COMMA 'AL' |
-    op_port_out 'DX' COMMA 'AX' ;
+Examples:
 
-reg_b := 'AL' | 'AH' | 'BL' | 'BH' | 'CL' | 'CH' | 'DL' | 'DH' ;
-reg_w := 'AX' | 'BX' | 'CX' | 'DX' | 'SI' | 'DI' | 'SP' | 'BP' ;
-seg := 'CS' | 'DS' | 'ES' | 'SS' ;
-mem_b := ['BYTE'] mem ;
-mem_w := ['WORD'] mem ;
-mem_d := ['DWORD'] mem ;
-mem := [seg COLON] mem_addr ;
-mem_addr := LBRACKET effective_address RBRACKET ;
-effective_address := address | ea_single | ea_double | ea_single_offset | ea_double_offset;
-ea_single := 'BX' | 'BP' | 'SI' | 'DI' ;
-ea_double :=
-    'BX' PLUS 'SI' | 'BP' PLUS 'SI' | 'BX' PLUS 'DI' | 'BP' PLUS 'DI' |
-    'SI' PLUS 'BX' | 'SI' PLUS 'BP' | 'DI' PLUS 'BX' | 'DI' PLUS 'BP' ;
-ea_single_offset := ea_single PLUS address | address PLUS ea_single | ea_single MINUS NUMBER | MINUS NUMBER PLUS ea_single ;
-ea_double_offset := ea_double PLUS address | address PLUS ea_double | ea_double MINUS NUMBER | MINUS NUMBER PLUS ea_double ;
-address := word ;
+```
+salutation  DB 'Hello',0Dh,0Ah,'$'
+address     DW salutation
+screen      DD 0b800h:0000h
+```
 
-op_zero :=
-    'AAA' | 'AAD' | 'AAM' | 'AAS' | 'CBW' | 'CLC' | 'CLD' | 'CLI' | 'CMC' | 'CMPSB' | 'CMPSW' | 'CWD' |
-    'DAA' | 'DAS' | 'HLT' | 'INTO' | 'IRET' | 'LAHF' | 'LODSB' | 'LODSW' | 'MOVSB' | 'MOVSW' | 'NOP' |
-    'POPF' | 'PUSHF' | 'SAHF' | 'SCASB' | 'SCASW' | 'STC' | 'STD' | 'STOSB' | 'STOSW' | 'STI' |
-    'WAIT' | 'XLAT' ;
-op_imm := 'INT';
-op_regmem := 'DEC' | 'DIV' | 'INC' | 'IDIV' | 'IMUL' | 'MUL' | 'NEG' | 'NOT' ;
-op_regmem_imm := 'ADC' | 'ADD' | 'AND' | 'CMP' | 'MOV' | 'OR' | 'SBB' | 'SUB' | 'TEST' | 'XOR' ;
-op_regmem_regmem := 'ADC' | 'ADD' | 'AND' | 'CMP' | 'MOV' | 'OR' | 'SBB' | 'SUB' | 'TEST' | 'XCHG' | 'XOR' ;
-op_stack := 'POP' | 'PUSH' ;
-op_rotate := 'RCL' | 'RCR' | 'ROL' | 'ROR' | 'SAL' | 'SAR' | 'SHL' | 'SHR' ;
-op_load := 'LDS' | 'LEA' | 'LES' ;
-op_mov := 'MOV' ;
-op_ret := 'RET' ;
-op_call := 'CALL' ;
-op_jmp := 'JMP' ;
-op_jmp_cond :=
-    'JA' | 'JAE' | 'JB' | 'JBE' | 'JC' | 'JCXZ' | 'JE' | 'JG' | 'JGE' | 'JL' | 'JLE' | 'JO' | 'JP' | 'JPE' | 'JPO' | 'JS' | 'JZ' |
-    'JNA' | 'JNAE' | 'JNB' | 'JNBE' | 'JNC' | 'JNE' | 'JNG' | 'JNGE' | 'JNL' | 'JNLE' | 'JNO' | 'JNP' | 'JNS' | 'JNZ' |
-    'LOOP' | 'LOOPE' | 'LOOPNE' | 'LOOPNZ' | 'LOOPZ';
-op_port_in := 'IN' ;
-op_port_out := 'OUT' ;
+## Label definitions
+
+Label definitions consist of a label name followed by a colon. They may be in their own line, or they may be
+immediately followed by an instruction.
+
+Examples:
+
+```
+start:
+    MOV AX, AX
+end: JMP start
+```
+
+## Instructions
+
+Some instructions take zero arguments, and they can be denoted by their name.
+
+Examples:
+
+```
+PUSHF
+CLI
+POPF
+RET
+```
+
+Some instructions take one or two arguments. The first argument is separated from the instruction name by one or
+more spaces. The second argument, if it exists, is separated from the first by a comma.
+
+Examples:
+
+```
+DEC AX
+MOV BX, CX
+```
+
+Arguments can be numbers, labels, register names, segment names, or memory pointers. Labels represent the memory
+address they point to. Numbers and labels can be operated on with the addition (+) and subtraction (-) operators.
+
+The valid 16-bit registers are `AX`, `BX`, `CX`, `DX`, `BP`, `SP`, `SI`, and `DI`. The valid 8-bit registers are
+`AL`/`AH`, `BL`/`BH`, `CL`/`CH`, and `DL`/`DH`. The valid segments are `CS`, `DS`, `ES`, and `SS`.
+
+Memory pointers are specified by a combination of a base register, an index register and an offset, all between square
+brackets. Memory pointers can be preceded by a segment name (followed by a colon) to change the pointer's segment.
+Memory pointers can also be preceded by `BYTE PTR`, `WORD PTR`, or `DWORD PTR` to indicate that the position in
+memory they point to contains a byte, word, or double word. This is not mandatory if it can be determined from context.
+
+In instructions that take two arguments, generally the first argument holds the "destination" of the operation and
+the second argument contains the "source".
+
+Examples:
+
+```
+MOV AX, 1       ; puts the value 1 in register AX
+MOV AX, [1234h] ; puts the content of the word in memory position 1234h in register AX
+DEC BYTE PTR [BX] ; accesses the memory position contained in register BX and decrements the byte contained there
+MOV AL, ES:[BP + SI + 1234]
+```
+
+Instruction list:
+
+`AAA` `AAD` `AAM` `AAS` `ADC` `ADD` `AND` `CALL` `CBW` `CLC` `CLD` `CLI` `CMC` `CMPSB` `CMPSW` `CMP` `CWD`
+`DAA` `DAS` `DEC` `DIV` `HLT` `ESC` `IDIV` `IMUL` `IN` `INC` `INT` `INTO` `IRET`
+`JA` `JAE` `JB` `JBE` `JC` `JCXZ` `JE` `JG` `JGE` `JL` `JLE` `JMP`
+`JNA` `JNAE` `JNB` `JNBE` `JNC` `JNE` `JNG` `JNGE` `JNL` `JNLE` `JNO` `JNP` `JNS` `JNZ` `JO` `JP` `JPE` `JPO` `JS` `JZ`
+`LAHF` `LDS` `LEA` `LES` `LODSB` `LODSW` `LOOP` `LOOPE` `LOOPNE` `LOOPNZ` `LOOPZ`
+`MOV` `MOVSB` `MOVSW` `MUL` `NEG` `NOT` `NOP` `OR` `OUT` `POP` `POPF` `PUSH` `PUSHF`
+`RCL` `RCR` `RET` `RETF` `RETN` `ROL` `ROR`
+`SAHF` `SAL` `SAR` `SBB` `SCASB` `SCASW` `SHL` `SHR` `STC` `STD` `STOSB` `STOSW` `STI` `SUB`
+`TEST` `WAIT` `XCHG` `XLAT` `XOR`
+
+Instructions may be prefixed by `LOCK`, `REP`/`REPE`/`REPZ`, `REPNE`/`REPNZ`.
+

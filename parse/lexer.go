@@ -8,29 +8,25 @@ import (
 	"strings"
 )
 
+// Lexer reads tokens from a restartable source.
+// Any empty lines (including EOL) at the beginning of the line are skipped, so you never get EOL as the first token.
+// An EOL is always returned right before EOF.
 type Lexer interface {
+	Restart() error
 	Next() error
 	Token() Token
 }
 
-func NewLexer(r io.Reader) (Lexer, error) {
-	var in io.ByteReader
-	if br, ok := r.(io.ByteReader); ok {
-		in = br
-	} else {
-		in = bufio.NewReader(r)
-	}
-	out := &lexer{in: in, line: 1, col: 0}
-	if err := out.readNext(); err != nil {
-		return nil, err
-	}
-	if _, err := out.skipWhitespace(); err != nil {
+func NewLexer(r io.ReadSeeker) (Lexer, error) {
+	out := &lexer{r: r}
+	if err := out.start(); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
 type lexer struct {
+	r     io.ReadSeeker
 	in    io.ByteReader
 	c     byte
 	rawc  byte
@@ -38,6 +34,29 @@ type lexer struct {
 	line  uint
 	col   uint
 	token Token
+}
+
+func (l *lexer) Restart() error {
+	if _, err := l.r.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	return l.start()
+}
+
+func (l *lexer) start() error {
+	*l = lexer{r: l.r, line: 1, col: 0}
+	if br, ok := l.r.(io.ByteReader); ok {
+		l.in = br
+	} else {
+		l.in = bufio.NewReader(l.r)
+	}
+	if err := l.readNext(); err != nil {
+		return err
+	}
+	if _, err := l.skipWhitespace(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (l *lexer) readNext() error {
@@ -53,6 +72,7 @@ func (l *lexer) readNext() error {
 	b, err := l.in.ReadByte()
 	if errors.Is(err, io.EOF) {
 		l.eof = true
+		return nil
 	} else if err != nil {
 		return err
 	}
@@ -70,13 +90,13 @@ func (l *lexer) skipWhitespace() (bool, error) {
 	comment := false
 	for {
 		if l.eof {
-			return eol, nil
+			return true, nil
 		} else if l.c == ';' {
 			comment = true
 		} else if l.c == '\n' {
 			eol = true
 			comment = false
-		} else if !comment && l.c != ' ' && l.c != '\t' {
+		} else if !comment && l.c != ' ' && l.c != '\t' && l.c != '\r' {
 			return eol, nil
 		}
 		if err := l.readNext(); err != nil {
@@ -87,7 +107,13 @@ func (l *lexer) skipWhitespace() (bool, error) {
 
 func (l *lexer) Next() error {
 	if l.eof {
-		l.token.Type = EOF
+		l.token.Line = l.line
+		l.token.Col = l.col
+		if l.token.Type != EOL && l.token.Type != EOF {
+			l.token.Type = EOL
+		} else {
+			l.token.Type = EOF
+		}
 		return nil
 	}
 	eol, err := l.skipWhitespace()
@@ -157,7 +183,7 @@ func (l *lexer) readString() error {
 			return l.error("unexpected end of line")
 		}
 		if l.c == '\'' {
-			l.token.String = sb.String()
+			l.token.Str = sb.String()
 			return l.readNext()
 		}
 		sb.WriteByte(l.rawc)

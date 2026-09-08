@@ -14,11 +14,14 @@ import (
 
 // nonByteReader wraps an io.Reader so it does NOT implement io.ByteReader.
 type nonByteReader struct {
-	r io.Reader
+	r io.ReadSeeker
 }
 
 func (n *nonByteReader) Read(p []byte) (int, error) {
 	return n.r.Read(p)
+}
+func (n *nonByteReader) Seek(offset int64, whence int) (int64, error) {
+	return n.r.Seek(offset, whence)
 }
 
 // errReader returns an error upon reading.
@@ -29,10 +32,10 @@ type errReader struct {
 func (e *errReader) Read(p []byte) (int, error) {
 	return 0, e.err
 }
-
 func (e *errReader) ReadByte() (byte, error) {
 	return 0, e.err
 }
+func (e *errReader) Seek(offset int64, whence int) (int64, error) { return 0, e.err }
 
 func TestNewLexer_NonByteReader(t *testing.T) {
 	input := "MOV AX, 123"
@@ -72,6 +75,9 @@ func TestLexer_PunctuationAndTokens(t *testing.T) {
 		tok := lexer.Token()
 		assert.Equal(t, expType, tok.Type)
 	}
+
+	require.NoError(t, lexer.Next())
+	assert.Equal(t, parse.EOL, lexer.Token().Type)
 
 	require.NoError(t, lexer.Next())
 	assert.Equal(t, parse.EOF, lexer.Token().Type)
@@ -124,17 +130,17 @@ func TestLexer_Strings(t *testing.T) {
 		require.NoError(t, lexer.Next())
 		tok := lexer.Token()
 		assert.Equal(t, parse.STRING, tok.Type)
-		assert.Equal(t, "Hello, World!", tok.String)
+		assert.Equal(t, "Hello, World!", tok.Str)
 
 		require.NoError(t, lexer.Next())
 		tok = lexer.Token()
 		assert.Equal(t, parse.STRING, tok.Type)
-		assert.Equal(t, "", tok.String)
+		assert.Equal(t, "", tok.Str)
 
 		require.NoError(t, lexer.Next())
 		tok = lexer.Token()
 		assert.Equal(t, parse.STRING, tok.Type)
-		assert.Equal(t, "123 ABC xyz", tok.String)
+		assert.Equal(t, "123 ABC xyz", tok.Str)
 	})
 
 	t.Run("Unclosed String EOF Error", func(t *testing.T) {
@@ -295,6 +301,10 @@ func TestLexer_CommentsAndWhitespace(t *testing.T) {
 
 		require.NoError(t, lexer.Next())
 		tok = lexer.Token()
+		assert.Equal(t, parse.EOL, tok.Type)
+
+		require.NoError(t, lexer.Next())
+		tok = lexer.Token()
 		assert.Equal(t, parse.EOF, tok.Type)
 	})
 
@@ -389,4 +399,21 @@ func (f *failingAfterNReader) ReadByte() (byte, error) {
 	b := f.data[f.pos]
 	f.pos++
 	return b, nil
+}
+
+func (f *failingAfterNReader) Seek(offset int64, whence int) (int64, error) {
+	var p int
+	switch whence {
+	case io.SeekStart:
+		p = int(offset)
+	case io.SeekCurrent:
+		p = f.pos + int(offset)
+	case io.SeekEnd:
+		p = len(f.data) + int(offset)
+	}
+	if p < 0 || p >= len(f.data) {
+		return 0, errors.New("out of range")
+	}
+	f.pos = p
+	return int64(p), nil
 }
