@@ -194,6 +194,14 @@ func (l *lexer) readNumber() error {
 	digits := [17]byte{}
 	numDigits := 0
 	for {
+		if l.eof || l.c != '0' {
+			break
+		}
+		if err := l.readNext(); err != nil {
+			return err
+		}
+	}
+	for {
 		if l.eof {
 			break
 		}
@@ -213,6 +221,11 @@ func (l *lexer) readNumber() error {
 			break
 		}
 	}
+	l.token.Type = NUMBER
+	if numDigits == 0 {
+		return nil
+	}
+
 	base := uint16(10)
 	numDigits--
 	suffix := digits[numDigits]
@@ -243,7 +256,6 @@ func (l *lexer) readNumber() error {
 		}
 		value = value*base + digit
 	}
-	l.token.Type = NUMBER
 	l.token.Number = value
 	return nil
 }

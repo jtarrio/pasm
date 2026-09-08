@@ -200,6 +200,10 @@ func TestLexer_Numbers(t *testing.T) {
 		{name: "Hex with B digit before H suffix", input: "10BH", expectedVal: 0x10B},
 		{name: "Hex max uint16 0FFFFh", input: "0FFFFH", expectedVal: 65535},
 
+		{name: "Zero", input: "0", expectedVal: 0},
+		{name: "Zero hex", input: "0h", expectedVal: 0},
+		{name: "Many leading zeros", input: "00000000000000000000101b", expectedVal: 5},
+
 		// Failure cases
 		{name: "Invalid binary digit", input: "102B", expectedError: "invalid digit for base 2: '2'"},
 		{name: "Invalid octal digit", input: "78O", expectedError: "invalid digit for base 8: '8'"},
