@@ -57,13 +57,15 @@ func TestNewLexer_InitialReadError(t *testing.T) {
 }
 
 func TestLexer_PunctuationAndTokens(t *testing.T) {
-	input := "[ ] + - , :"
+	input := "[ ] ( ) + - , :"
 	lexer, err := parse.NewLexer(strings.NewReader(input))
 	require.NoError(t, err)
 
 	expected := []parse.TokenType{
 		parse.LBRACKET,
 		parse.RBRACKET,
+		parse.LPAREN,
+		parse.RPAREN,
 		parse.PLUS,
 		parse.MINUS,
 		parse.COMMA,

@@ -9,6 +9,8 @@ const (
 	EOL
 	LBRACKET
 	RBRACKET
+	LPAREN
+	RPAREN
 	PLUS
 	MINUS
 	COMMA
@@ -79,9 +81,9 @@ func (s Segment) String() string {
 type Keyword uint8
 
 const (
-	ORG Keyword = iota
-
+	DUP Keyword = iota
 	EQU
+	ORG
 
 	BYTE
 	DWORD
@@ -217,9 +219,7 @@ const (
 )
 
 var Keywords = []string{
-	"ORG",
-
-	"EQU",
+	"DUP", "EQU", "ORG",
 
 	"BYTE", "DWORD", "FAR", "NEAR", "PTR", "SHORT", "WORD",
 
@@ -284,6 +284,10 @@ func (t Token) String() string {
 		return "left bracket"
 	case RBRACKET:
 		return "right bracket"
+	case LPAREN:
+		return "left parenthesis"
+	case RPAREN:
+		return "right parenthesis"
 	case PLUS:
 		return "plus sign"
 	case MINUS:

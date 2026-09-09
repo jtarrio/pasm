@@ -258,13 +258,21 @@ func (a *assembler) parseByteSequence() error {
 		if err := a.parseArgument(&arg); err != nil {
 			return err
 		}
+		var dup uint16
+		if err := a.parseDup(&arg, &dup); err != nil {
+			return err
+		}
 		if arg.argType == argNum|sizeByte {
-			if err := a.emitByte(byte(arg.value)); err != nil {
-				return err
+			for i := uint16(0); i < dup; i++ {
+				if err := a.emitByte(byte(arg.value)); err != nil {
+					return err
+				}
 			}
 		} else if arg.argType == argString {
-			if err := a.emitString(arg.string); err != nil {
-				return err
+			for i := uint16(0); i < dup; i++ {
+				if err := a.emitString(arg.string); err != nil {
+					return err
+				}
 			}
 		} else {
 			return a.errorArg("expected byte or string argument", &arg)
@@ -284,13 +292,21 @@ func (a *assembler) parseWordSequence() error {
 		if err := a.parseArgument(&arg); err != nil {
 			return err
 		}
+		var dup uint16
+		if err := a.parseDup(&arg, &dup); err != nil {
+			return err
+		}
 		if arg.argType.Class() == argNum {
-			if err := a.emitWord(arg.value); err != nil {
-				return err
+			for i := uint16(0); i < dup; i++ {
+				if err := a.emitWord(arg.value); err != nil {
+					return err
+				}
 			}
 		} else if arg.argType == argString && len(arg.string) == 2 {
-			if err := a.emitString(arg.string); err != nil {
-				return err
+			for i := uint16(0); i < dup; i++ {
+				if err := a.emitString(arg.string); err != nil {
+					return err
+				}
 			}
 		} else {
 			return a.errorArg("expected word argument", &arg)
@@ -310,13 +326,21 @@ func (a *assembler) parseDwordSequence() error {
 		if err := a.parseArgument(&arg); err != nil {
 			return err
 		}
+		var dup uint16
+		if err := a.parseDup(&arg, &dup); err != nil {
+			return err
+		}
 		if arg.argType == argNum|sizeDword {
-			if err := a.emitDword(arg.value, arg.value2); err != nil {
-				return err
+			for i := uint16(0); i < dup; i++ {
+				if err := a.emitDword(arg.value, arg.value2); err != nil {
+					return err
+				}
 			}
 		} else if arg.argType == argString && len(arg.string) == 4 {
-			if err := a.emitString(arg.string); err != nil {
-				return err
+			for i := uint16(0); i < dup; i++ {
+				if err := a.emitString(arg.string); err != nil {
+					return err
+				}
 			}
 		} else {
 			return a.errorArg("expected dword argument", &arg)
@@ -325,6 +349,33 @@ func (a *assembler) parseDwordSequence() error {
 			return nil
 		}
 		if err := a.expectAndNext(parse.COMMA, "expected comma"); err != nil {
+			return err
+		}
+	}
+}
+
+func (a *assembler) parseDup(arg *argument, dup *uint16) error {
+	*dup = 1
+	level := 0
+	for {
+		if arg.argType.Class() != argNum || a.in.Token().Type != parse.KEYWORD || a.in.Token().Keyword != parse.DUP {
+			for level > 0 {
+				if err := a.expectAndNext(parse.RPAREN, "expected right parenthesis"); err != nil {
+					return err
+				}
+				level--
+			}
+			return nil
+		}
+		level++
+		*dup = *dup * arg.value
+		if err := a.in.Next(); err != nil {
+			return err
+		}
+		if err := a.expectAndNext(parse.LPAREN, "expected left parenthesis"); err != nil {
+			return err
+		}
+		if err := a.parseArgument(arg); err != nil {
 			return err
 		}
 	}

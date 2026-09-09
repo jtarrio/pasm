@@ -97,6 +97,23 @@ func TestAssemble_DirectivesAndData(t *testing.T) {
 		assertAssemble(t, "EMPTY EQU\nMOV AX, EMPTY 1\n", "B8 01 00")
 		assertAssemble(t, "VAL EQU 1\nMOV AX, VAL", "B8 01 00")
 	})
+
+	t.Run("DUP", func(t *testing.T) {
+		assertAssemble(t, "DB 5 DUP(0)\n", "00 00 00 00 00")
+		assertAssemble(t, "DB 3 DUP('A')\n", "41 41 41")
+		assertAssemble(t, "DB 2 DUP('AB')\n", "41 42 41 42")
+		assertAssemble(t, "DW 3 DUP(1234h)\n", "34 12 34 12 34 12")
+		assertAssemble(t, "DW 2 DUP('AB')\n", "41 42 41 42")
+		assertAssemble(t, "DD 2 DUP(1234h:5678h)\n", "78 56 34 12 78 56 34 12")
+		assertAssemble(t, "DD 2 DUP('ABCD')\n", "41 42 43 44 41 42 43 44")
+		assertAssemble(t, "DB 0 DUP(1)\nNOP\n", "90")
+		assertAssemble(t, "DB 2 DUP(3 DUP(1))\n", "01 01 01 01 01 01")
+		assertAssemble(t, "DB 2 DUP(3 DUP(2 DUP(7)))\n", "07 07 07 07 07 07 07 07 07 07 07 07")
+		assertAssemble(t, "DB 2 DUP(1), 3 DUP(2), 3\n", "01 01 02 02 02 03")
+		assertAssemble(t, "DB 2 DUP(10h + 5)\n", "15 15")
+		assertAssemble(t, "COUNT EQU 3\nDB COUNT DUP(42h)\n", "42 42 42")
+		assertAssemble(t, "DW 2 DUP(target)\ntarget: NOP\n", "04 00 04 00 90")
+	})
 }
 
 func TestAssemble_SimpleInstructions(t *testing.T) {
@@ -520,6 +537,11 @@ func TestAssemble_Errors(t *testing.T) {
 		{"Forward reference to EQU", "MOV AX, VAL\nVAL EQU 42h\n"},
 		{"Colon before EQU", "VAL: EQU 10\n"},
 		{"EQU without identifier", "EQU 10\n"},
+		{"DUP without left parenthesis", "DB 5 DUP 0)\n"},
+		{"DUP without right parenthesis", "DB 5 DUP(0\n"},
+		{"Nested DUP missing right parenthesis", "DB 2 DUP(3 DUP(1)\n"},
+		{"DUP with empty parentheses", "DB 5 DUP()\n"},
+		{"DUP without count", "DB DUP(0)\n"},
 	}
 
 	for _, tc := range tests {

@@ -150,6 +150,14 @@ func (l *lexer) readToken() error {
 		l.token.Type = RBRACKET
 		return l.readNext()
 	}
+	if l.c == '(' {
+		l.token.Type = LPAREN
+		return l.readNext()
+	}
+	if l.c == ')' {
+		l.token.Type = RPAREN
+		return l.readNext()
+	}
 	if l.c == '+' {
 		l.token.Type = PLUS
 		return l.readNext()

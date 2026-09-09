@@ -49,6 +49,7 @@ MOV mem, 1
 ## Data definitions
 
 Data definitions start with a new label name and are followed by a `DB`, `DD`, or `DW` instruction.
+You can use the `DUP` directive to define blocks of data.
 
 Examples:
 
@@ -56,6 +57,9 @@ Examples:
 salutation  DB 'Hello',0Dh,0Ah,'$'
 address     DW salutation
 screen      DD 0b800h:0000h
+buffer      DB 512 DUP (0)
+hello       DB 32 DUP ('Hello!')
+ptrs        DD 256 DUP (0000:0000)
 ```
 
 ## Label definitions
