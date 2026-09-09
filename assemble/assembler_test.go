@@ -83,6 +83,20 @@ func TestAssemble_DirectivesAndData(t *testing.T) {
 		assertAssemble(t, "screen DD 0b800h:0000h\n", "00 00 00 B8")
 		assertAssemble(t, "DD 1234h:5678h\n", "78 56 34 12")
 	})
+
+	t.Run("EQU", func(t *testing.T) {
+		assertAssemble(t, "VAL EQU 42h\nMOV AL, VAL\n", "B0 42")
+		assertAssemble(t, "VAL EQU 10h + 5\nMOV AL, VAL\n", "B0 15")
+		assertAssemble(t, "DEST EQU BL\nSRC EQU AL\nMOV DEST, SRC\n", "88 C3")
+		assertAssemble(t, "SREG EQU DS\nPUSH SREG\n", "1E")
+		assertAssemble(t, "MEM EQU BYTE PTR [BX + SI]\nMOV MEM, 1\n", "C6 00 01")
+		assertAssemble(t, "ADDR EQU [BP + 4]\nMOV AX, ADDR\n", "8B 46 04")
+		assertAssemble(t, "OFFSET EQU 10h\nMOV AL, [BX + OFFSET]\n", "8A 47 10")
+		assertAssemble(t, "A EQU 10h\nB EQU A + 5\nMOV AL, B\n", "B0 15")
+		assertAssemble(t, "TARGET EQU LBL\nJMP SHORT TARGET\nLBL: NOP\n", "EB 00 90")
+		assertAssemble(t, "EMPTY EQU\nMOV AX, EMPTY 1\n", "B8 01 00")
+		assertAssemble(t, "VAL EQU 1\nMOV AX, VAL", "B8 01 00")
+	})
 }
 
 func TestAssemble_SimpleInstructions(t *testing.T) {
@@ -499,6 +513,13 @@ func TestAssemble_Errors(t *testing.T) {
 		{"Mismatch DW label with byte register", "w DW 1234h\nMOV AL, [w]\n"},
 		{"Invalid indirect JMP via DB", "target DB 10h\nJMP [target]\n"},
 		{"Invalid indirect CALL via DB", "target DB 10h\nCALL [target]\n"},
+		{"Collision: code label then EQU", "LBL: NOP\nLBL EQU 10\n"},
+		{"Collision: data label then EQU", "DATA DB 1\nDATA EQU 10\n"},
+		{"Collision: EQU then code label", "FOO EQU 10\nFOO: NOP\n"},
+		{"Duplicate EQU definition", "VAL EQU 1\nVAL EQU 2\n"},
+		{"Forward reference to EQU", "MOV AX, VAL\nVAL EQU 42h\n"},
+		{"Colon before EQU", "VAL: EQU 10\n"},
+		{"EQU without identifier", "EQU 10\n"},
 	}
 
 	for _, tc := range tests {

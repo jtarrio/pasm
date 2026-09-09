@@ -35,6 +35,17 @@ Changes the current position in memory to the given value.
 
 Example: `ORG 100h`
 
+### identifier `EQU` token token ...
+
+Registers the given identifier so it will be replaced with the tokens whenever it's found in the source.
+
+Example:
+
+```
+mem EQU BYTE PTR [BX + SI]
+MOV mem, 1
+```
+
 ## Data definitions
 
 Data definitions start with a new label name and are followed by a `DB`, `DD`, or `DW` instruction.

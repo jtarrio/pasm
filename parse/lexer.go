@@ -15,6 +15,7 @@ type Lexer interface {
 	Restart() error
 	Next() error
 	Token() Token
+	AddEqu(name string, tokens []Token) error
 }
 
 func NewLexer(r io.ReadSeeker) (Lexer, error) {
@@ -26,14 +27,16 @@ func NewLexer(r io.ReadSeeker) (Lexer, error) {
 }
 
 type lexer struct {
-	r     io.ReadSeeker
-	in    io.ByteReader
-	c     byte
-	rawc  byte
-	eof   bool
-	line  uint
-	col   uint
-	token Token
+	r          io.ReadSeeker
+	in         io.ByteReader
+	c          byte
+	rawc       byte
+	eof        bool
+	line       uint
+	col        uint
+	token      Token
+	equs       map[string][]Token
+	currentEqu []Token
 }
 
 func (l *lexer) Restart() error {
@@ -44,7 +47,7 @@ func (l *lexer) Restart() error {
 }
 
 func (l *lexer) start() error {
-	*l = lexer{r: l.r, line: 1, col: 0}
+	*l = lexer{r: l.r, line: 1, col: 0, equs: map[string][]Token{}}
 	if br, ok := l.r.(io.ByteReader); ok {
 		l.in = br
 	} else {
@@ -106,6 +109,12 @@ func (l *lexer) skipWhitespace() (bool, error) {
 }
 
 func (l *lexer) Next() error {
+	if len(l.currentEqu) > 0 {
+		l.token = l.currentEqu[0]
+		l.currentEqu = l.currentEqu[1:]
+		return nil
+	}
+
 	if l.eof {
 		l.token.Line = l.line
 		l.token.Col = l.col
@@ -285,6 +294,12 @@ func (l *lexer) readIdentifier() error {
 	} else if kw, found := IsKeyword(id); found {
 		l.token.Type = KEYWORD
 		l.token.Keyword = kw
+	} else if l.findEqu(id) {
+		if len(l.currentEqu) == 0 {
+			return l.Next()
+		}
+		l.token = l.currentEqu[0]
+		l.currentEqu = l.currentEqu[1:]
 	} else {
 		l.token.Type = IDENTIFIER
 		l.token.Identifier = id
@@ -298,4 +313,20 @@ func (l *lexer) error(msg string) error {
 
 func (l *lexer) Token() Token {
 	return l.token
+}
+
+func (l *lexer) AddEqu(name string, tokens []Token) error {
+	if _, found := l.equs[name]; found {
+		return l.error(fmt.Sprintf("%s is already defined as an EQU", name))
+	}
+	l.equs[name] = tokens
+	return nil
+}
+
+func (l *lexer) findEqu(name string) bool {
+	if tokens, found := l.equs[name]; found {
+		l.currentEqu = tokens
+		return true
+	}
+	return false
 }

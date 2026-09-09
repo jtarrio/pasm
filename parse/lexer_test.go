@@ -421,3 +421,188 @@ func (f *failingAfterNReader) Seek(offset int64, whence int) (int64, error) {
 	f.pos = p
 	return int64(p), nil
 }
+
+func TestLexer_Equ(t *testing.T) {
+	t.Run("single token substitution", func(t *testing.T) {
+		lexer, err := parse.NewLexer(strings.NewReader("MOV AX, CONST"))
+		require.NoError(t, err)
+
+		require.NoError(t, lexer.AddEqu("CONST", []parse.Token{{Type: parse.NUMBER, Number: 42}}))
+
+		expected := []parse.Token{
+			{Type: parse.KEYWORD, Keyword: parse.MOV},
+			{Type: parse.REGISTER, Register: parse.AX},
+			{Type: parse.COMMA},
+			{Type: parse.NUMBER, Number: 42},
+			{Type: parse.EOL},
+			{Type: parse.EOF},
+		}
+
+		for i, exp := range expected {
+			require.NoError(t, lexer.Next(), "Next() at index %d", i)
+			tok := lexer.Token()
+			assert.Equal(t, exp.Type, tok.Type, "Type at index %d", i)
+			if exp.Type == parse.NUMBER {
+				assert.Equal(t, exp.Number, tok.Number, "Number at index %d", i)
+			}
+			if exp.Type == parse.REGISTER {
+				assert.Equal(t, exp.Register, tok.Register, "Register at index %d", i)
+			}
+			if exp.Type == parse.KEYWORD {
+				assert.Equal(t, exp.Keyword, tok.Keyword, "Keyword at index %d", i)
+			}
+		}
+	})
+
+	t.Run("multi-token substitution", func(t *testing.T) {
+		lexer, err := parse.NewLexer(strings.NewReader("MOV MEM, 1"))
+		require.NoError(t, err)
+
+		tokens := []parse.Token{
+			{Type: parse.LBRACKET},
+			{Type: parse.REGISTER, Register: parse.BX},
+			{Type: parse.PLUS},
+			{Type: parse.REGISTER, Register: parse.SI},
+			{Type: parse.RBRACKET},
+		}
+		require.NoError(t, lexer.AddEqu("MEM", tokens))
+
+		expected := []parse.Token{
+			{Type: parse.KEYWORD, Keyword: parse.MOV},
+			{Type: parse.LBRACKET},
+			{Type: parse.REGISTER, Register: parse.BX},
+			{Type: parse.PLUS},
+			{Type: parse.REGISTER, Register: parse.SI},
+			{Type: parse.RBRACKET},
+			{Type: parse.COMMA},
+			{Type: parse.NUMBER, Number: 1},
+			{Type: parse.EOL},
+			{Type: parse.EOF},
+		}
+
+		for i, exp := range expected {
+			require.NoError(t, lexer.Next(), "Next() at index %d", i)
+			tok := lexer.Token()
+			assert.Equal(t, exp.Type, tok.Type, "Type at index %d", i)
+			if exp.Type == parse.NUMBER {
+				assert.Equal(t, exp.Number, tok.Number, "Number at index %d", i)
+			}
+			if exp.Type == parse.REGISTER {
+				assert.Equal(t, exp.Register, tok.Register, "Register at index %d", i)
+			}
+			if exp.Type == parse.KEYWORD {
+				assert.Equal(t, exp.Keyword, tok.Keyword, "Keyword at index %d", i)
+			}
+		}
+	})
+
+	t.Run("multiple equs in sequence", func(t *testing.T) {
+		lexer, err := parse.NewLexer(strings.NewReader("MOV DEST, SRC"))
+		require.NoError(t, err)
+
+		require.NoError(t, lexer.AddEqu("DEST", []parse.Token{{Type: parse.REGISTER, Register: parse.AX}}))
+		require.NoError(t, lexer.AddEqu("SRC", []parse.Token{{Type: parse.REGISTER, Register: parse.BX}}))
+
+		expected := []parse.Token{
+			{Type: parse.KEYWORD, Keyword: parse.MOV},
+			{Type: parse.REGISTER, Register: parse.AX},
+			{Type: parse.COMMA},
+			{Type: parse.REGISTER, Register: parse.BX},
+			{Type: parse.EOL},
+			{Type: parse.EOF},
+		}
+
+		for i, exp := range expected {
+			require.NoError(t, lexer.Next(), "Next() at index %d", i)
+			tok := lexer.Token()
+			assert.Equal(t, exp.Type, tok.Type, "Type at index %d", i)
+			if exp.Type == parse.REGISTER {
+				assert.Equal(t, exp.Register, tok.Register, "Register at index %d", i)
+			}
+			if exp.Type == parse.KEYWORD {
+				assert.Equal(t, exp.Keyword, tok.Keyword, "Keyword at index %d", i)
+			}
+		}
+	})
+
+	t.Run("empty equ is skipped mid-statement", func(t *testing.T) {
+		lexer, err := parse.NewLexer(strings.NewReader("MOV EMPTY AX"))
+		require.NoError(t, err)
+
+		require.NoError(t, lexer.AddEqu("EMPTY", nil))
+
+		expected := []parse.Token{
+			{Type: parse.KEYWORD, Keyword: parse.MOV},
+			{Type: parse.REGISTER, Register: parse.AX},
+			{Type: parse.EOL},
+			{Type: parse.EOF},
+		}
+
+		for i, exp := range expected {
+			require.NoError(t, lexer.Next(), "Next() at index %d", i)
+			tok := lexer.Token()
+			assert.Equal(t, exp.Type, tok.Type, "Type at index %d", i)
+			if exp.Type == parse.REGISTER {
+				assert.Equal(t, exp.Register, tok.Register, "Register at index %d", i)
+			}
+			if exp.Type == parse.KEYWORD {
+				assert.Equal(t, exp.Keyword, tok.Keyword, "Keyword at index %d", i)
+			}
+		}
+	})
+
+	t.Run("empty equ at EOL", func(t *testing.T) {
+		lexer, err := parse.NewLexer(strings.NewReader("MOV AX EMPTY\nNOP"))
+		require.NoError(t, err)
+
+		require.NoError(t, lexer.AddEqu("EMPTY", nil))
+
+		expected := []parse.Token{
+			{Type: parse.KEYWORD, Keyword: parse.MOV},
+			{Type: parse.REGISTER, Register: parse.AX},
+			{Type: parse.EOL},
+			{Type: parse.KEYWORD, Keyword: parse.NOP},
+			{Type: parse.EOL},
+			{Type: parse.EOF},
+		}
+
+		for i, exp := range expected {
+			require.NoError(t, lexer.Next(), "Next() at index %d", i)
+			tok := lexer.Token()
+			assert.Equal(t, exp.Type, tok.Type, "Type at index %d", i)
+			if exp.Type == parse.REGISTER {
+				assert.Equal(t, exp.Register, tok.Register, "Register at index %d", i)
+			}
+			if exp.Type == parse.KEYWORD {
+				assert.Equal(t, exp.Keyword, tok.Keyword, "Keyword at index %d", i)
+			}
+		}
+	})
+
+	t.Run("restart clears equs", func(t *testing.T) {
+		lexer, err := parse.NewLexer(strings.NewReader("CONST"))
+		require.NoError(t, err)
+
+		require.NoError(t, lexer.AddEqu("CONST", []parse.Token{{Type: parse.NUMBER, Number: 99}}))
+
+		require.NoError(t, lexer.Next())
+		assert.Equal(t, parse.NUMBER, lexer.Token().Type)
+		assert.Equal(t, uint16(99), lexer.Token().Number)
+
+		require.NoError(t, lexer.Restart())
+
+		require.NoError(t, lexer.Next())
+		assert.Equal(t, parse.IDENTIFIER, lexer.Token().Type)
+		assert.Equal(t, "CONST", lexer.Token().Identifier)
+	})
+
+	t.Run("duplicate equ name error", func(t *testing.T) {
+		lexer, err := parse.NewLexer(strings.NewReader(""))
+		require.NoError(t, err)
+
+		require.NoError(t, lexer.AddEqu("FOO", nil))
+		err = lexer.AddEqu("FOO", nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "FOO is already defined as an EQU")
+	})
+}

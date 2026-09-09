@@ -81,6 +81,8 @@ type Keyword uint8
 const (
 	ORG Keyword = iota
 
+	EQU
+
 	BYTE
 	DWORD
 	FAR
@@ -216,6 +218,8 @@ const (
 
 var Keywords = []string{
 	"ORG",
+
+	"EQU",
 
 	"BYTE", "DWORD", "FAR", "NEAR", "PTR", "SHORT", "WORD",
 

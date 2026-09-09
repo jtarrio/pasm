@@ -95,7 +95,7 @@ func (a *assembler) parseLine() error {
 		return a.parseLabeledStatement()
 	case parse.KEYWORD:
 		if token.Keyword == parse.ORG {
-			return a.parseOrg()
+			return a.parseOrgDirective()
 		}
 		return a.parseStatement()
 	default:
@@ -124,27 +124,36 @@ func (a *assembler) parseLabeledStatement() error {
 		}
 		return a.parseStatement()
 	case parse.KEYWORD:
-		class := anyAddr
 		switch a.in.Token().Keyword {
 		case parse.DB:
-			class = byteAddr
+			class := byteAddr
+			if err := a.addLabel(labelToken, class); err != nil {
+				return err
+			}
+			return a.parseDataStatement()
 		case parse.DW:
-			class = wordAddr
+			class := wordAddr
+			if err := a.addLabel(labelToken, class); err != nil {
+				return err
+			}
+			return a.parseDataStatement()
 		case parse.DD:
-			class = dwordAddr
+			class := dwordAddr
+			if err := a.addLabel(labelToken, class); err != nil {
+				return err
+			}
+			return a.parseDataStatement()
+		case parse.EQU:
+			return a.parseEquDirective(labelToken.Identifier)
 		default:
-			return a.errorFound("expected DB, DW, or DD")
+			return a.errorFound("expected DB, DW, DD, or EQU")
 		}
-		if err := a.addLabel(labelToken, class); err != nil {
-			return err
-		}
-		return a.parseDataStatement()
 	default:
-		return a.errorFound("expected colon, DB, DW, or DD")
+		return a.errorFound("expected colon, DB, DW, DD, or EQU")
 	}
 }
 
-func (a *assembler) parseOrg() error {
+func (a *assembler) parseOrgDirective() error {
 	if err := a.nextAndExpect(parse.NUMBER, "expected number"); err != nil {
 		return err
 	}
@@ -152,6 +161,22 @@ func (a *assembler) parseOrg() error {
 		return err
 	}
 	return a.in.Next()
+}
+
+func (a *assembler) parseEquDirective(id string) error {
+	if _, ok := a.labels[id]; ok {
+		return a.error(fmt.Sprintf("%s is already defined", id))
+	}
+	var tokens []parse.Token
+	for {
+		if err := a.in.Next(); err != nil {
+			return err
+		}
+		if a.in.Token().Type == parse.EOL {
+			return a.in.AddEqu(id, tokens)
+		}
+		tokens = append(tokens, a.in.Token())
+	}
 }
 
 func (a *assembler) parseDataStatement() error {
