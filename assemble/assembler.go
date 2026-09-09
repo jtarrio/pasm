@@ -180,25 +180,11 @@ func (a *assembler) parseEquDirective(id string) error {
 }
 
 func (a *assembler) parseDataStatement() error {
-	switch a.in.Token().Keyword {
-	case parse.DB:
-		if err := a.in.Next(); err != nil {
-			return err
-		}
-		return a.parseByteSequence()
-	case parse.DW:
-		if err := a.in.Next(); err != nil {
-			return err
-		}
-		return a.parseWordSequence()
-	case parse.DD:
-		if err := a.in.Next(); err != nil {
-			return err
-		}
-		return a.parseDwordSequence()
-	default:
-		return a.errorFound("expected DB, DW, or DD")
+	kw := a.in.Token().Keyword
+	if err := a.in.Next(); err != nil {
+		return err
 	}
+	return a.parseDataSequence(kw)
 }
 
 func (a *assembler) parseStatement() error {
@@ -252,7 +238,7 @@ func (a *assembler) parseStatement() error {
 	return a.emitInstruction(kw, &arg1, &arg2)
 }
 
-func (a *assembler) parseByteSequence() error {
+func (a *assembler) parseDataSequence(kw parse.Keyword) error {
 	for {
 		var arg argument
 		if err := a.parseArgument(&arg); err != nil {
@@ -262,88 +248,57 @@ func (a *assembler) parseByteSequence() error {
 		if err := a.parseDup(&arg, &dup); err != nil {
 			return err
 		}
-		if arg.argType == argNum|sizeByte {
-			for i := uint16(0); i < dup; i++ {
-				if err := a.emitByte(byte(arg.value)); err != nil {
-					return err
+		switch kw {
+		case parse.DB:
+			if arg.argType == argNum|sizeByte {
+				for i := uint16(0); i < dup; i++ {
+					if err := a.emitByte(byte(arg.value)); err != nil {
+						return err
+					}
 				}
-			}
-		} else if arg.argType == argString {
-			for i := uint16(0); i < dup; i++ {
-				if err := a.emitString(arg.string); err != nil {
-					return err
+			} else if arg.argType == argString {
+				for i := uint16(0); i < dup; i++ {
+					if err := a.emitString(arg.string); err != nil {
+						return err
+					}
 				}
+			} else {
+				return a.errorArg("expected byte or string argument", &arg)
 			}
-		} else {
-			return a.errorArg("expected byte or string argument", &arg)
-		}
-		if a.in.Token().Type == parse.EOL {
-			return nil
-		}
-		if err := a.expectAndNext(parse.COMMA, "expected comma"); err != nil {
-			return err
-		}
-	}
-}
-
-func (a *assembler) parseWordSequence() error {
-	for {
-		var arg argument
-		if err := a.parseArgument(&arg); err != nil {
-			return err
-		}
-		var dup uint16
-		if err := a.parseDup(&arg, &dup); err != nil {
-			return err
-		}
-		if arg.argType.Class() == argNum {
-			for i := uint16(0); i < dup; i++ {
-				if err := a.emitWord(arg.value); err != nil {
-					return err
+		case parse.DW:
+			if arg.argType.Class() == argNum {
+				for i := uint16(0); i < dup; i++ {
+					if err := a.emitWord(arg.value); err != nil {
+						return err
+					}
 				}
-			}
-		} else if arg.argType == argString && len(arg.string) == 2 {
-			for i := uint16(0); i < dup; i++ {
-				if err := a.emitString(arg.string); err != nil {
-					return err
+			} else if arg.argType == argString && len(arg.string) == 2 {
+				for i := uint16(0); i < dup; i++ {
+					if err := a.emitString(arg.string); err != nil {
+						return err
+					}
 				}
+			} else {
+				return a.errorArg("expected word argument", &arg)
 			}
-		} else {
-			return a.errorArg("expected word argument", &arg)
-		}
-		if a.in.Token().Type == parse.EOL {
-			return nil
-		}
-		if err := a.expectAndNext(parse.COMMA, "expected comma"); err != nil {
-			return err
-		}
-	}
-}
-
-func (a *assembler) parseDwordSequence() error {
-	for {
-		var arg argument
-		if err := a.parseArgument(&arg); err != nil {
-			return err
-		}
-		var dup uint16
-		if err := a.parseDup(&arg, &dup); err != nil {
-			return err
-		}
-		if arg.argType == argNum|sizeDword {
-			for i := uint16(0); i < dup; i++ {
-				if err := a.emitDword(arg.value, arg.value2); err != nil {
-					return err
+		case parse.DD:
+			if arg.argType == argNum|sizeDword {
+				for i := uint16(0); i < dup; i++ {
+					if err := a.emitDword(arg.value, arg.value2); err != nil {
+						return err
+					}
 				}
-			}
-		} else if arg.argType == argString && len(arg.string) == 4 {
-			for i := uint16(0); i < dup; i++ {
-				if err := a.emitString(arg.string); err != nil {
-					return err
+			} else if arg.argType == argString && len(arg.string) == 4 {
+				for i := uint16(0); i < dup; i++ {
+					if err := a.emitString(arg.string); err != nil {
+						return err
+					}
 				}
+			} else {
+				return a.errorArg("expected dword argument", &arg)
 			}
-		} else {
-			return a.errorArg("expected dword argument", &arg)
+		default:
+			return a.errorFound("expected DB, DW, or DD")
 		}
 		if a.in.Token().Type == parse.EOL {
 			return nil
@@ -518,25 +473,14 @@ func (a *assembler) parseBarePtrArg(arg *argument) error {
 		}
 	}
 
-	if bxBp == 0 && siDi == 0 {
+	eaTable := [3][3]eaMode{
+		{eaDirect, eaSi, eaDi},
+		{eaBx, eaBxSi, eaBxDi},
+		{eaBp | eaOffset, eaBpSi, eaBpDi},
+	}
+	arg.eaMode |= eaTable[bxBp][siDi]
+	if bxBp+siDi == 0 {
 		arg.value = offset
-		arg.eaMode |= eaDirect
-	} else if bxBp == 0 && siDi == 1 {
-		arg.eaMode |= eaSi
-	} else if bxBp == 0 && siDi == 2 {
-		arg.eaMode |= eaDi
-	} else if bxBp == 1 && siDi == 0 {
-		arg.eaMode |= eaBx
-	} else if bxBp == 1 && siDi == 1 {
-		arg.eaMode |= eaBxSi
-	} else if bxBp == 1 && siDi == 2 {
-		arg.eaMode |= eaBxDi
-	} else if bxBp == 2 && siDi == 0 {
-		arg.eaMode |= eaBp | eaOffset
-	} else if bxBp == 2 && siDi == 1 {
-		arg.eaMode |= eaBpSi
-	} else if bxBp == 2 && siDi == 2 {
-		arg.eaMode |= eaBpDi
 	}
 	if (offset != 0 || labelClass != noLabel) && arg.eaMode & ^eaSegment != eaDirect {
 		arg.eaMode |= eaOffset

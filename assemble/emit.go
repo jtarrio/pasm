@@ -132,15 +132,56 @@ func (a *assembler) emitRm(opcode byte, ext byte, arg *argument, rest ...byte) e
 	return nil
 }
 
+func (a *assembler) emitRmWidth1(opcode byte, ext byte, arg *argument, rest ...byte) (error, bool) {
+	if arg.IsByte() {
+		return a.emitRm(opcode, ext, arg, rest...), true
+	}
+	if arg.IsWord() {
+		return a.emitRm(opcode|1, ext, arg, rest...), true
+	}
+	return nil, false
+}
+
+func (a *assembler) emitRmWidth2(opcode byte, ext byte, a1, a2 *argument, rest ...byte) (error, bool) {
+	if a1.IsByte() && a2.IsByte() {
+		return a.emitRm(opcode, ext, a1, rest...), true
+	}
+	if a1.IsWord() && a2.IsWord() {
+		return a.emitRm(opcode|1, ext, a1, rest...), true
+	}
+	return nil, false
+}
+
+func (a *assembler) emitRmImm(opcode byte, ext byte, a1, a2 *argument, signExtend bool) (error, bool) {
+	if a1.IsByte() && a2.IsByte() {
+		return a.emitRm(opcode, ext, a1, byte(a2.value)), true
+	}
+	if a1.IsWord() && a2.IsByte() && signExtend && int16(a2.value) <= 127 {
+		return a.emitRm(opcode|3, ext, a1, byte(a2.value)), true
+	}
+	if a1.IsWord() && a2.IsWord() {
+		return a.emitRm(opcode|1, ext, a1, byte(a2.value), byte(a2.value>>8)), true
+	}
+	return nil, false
+}
+
+func (a *assembler) emitShortJmp(opcode byte, arg *argument) error {
+	disp := int16(arg.value - (a.pc + 2))
+	if a.pass == 2 && (disp < -128 || disp > 127) {
+		return a.error("destination address is too far for a short jump")
+	}
+	return a.emitBytes(opcode, byte(disp))
+}
+
 var ops = [...]opPattern{
 	parse.AAA:    noArgs{0b00110111},
 	parse.AAD:    aamaad{0b11010101},
 	parse.AAM:    aamaad{0b11010100},
 	parse.AAS:    noArgs{0b00111111},
-	parse.ADC:    arith{0b00010100, 0b00010000, 0b10000000, 0b010, true},
-	parse.ADD:    arith{0b00000100, 0b00000000, 0b10000000, 0b000, true},
-	parse.AND:    arith{0b00100100, 0b00100000, 0b10000000, 0b100, false},
-	parse.CALL:   call{0b11101000, 0b10011010, 0b11111111, 0b010, 0b011},
+	parse.ADC:    arith{0b00010100, 0b00010000, 0b10000000, 0b010, true, false},
+	parse.ADD:    arith{0b00000100, 0b00000000, 0b10000000, 0b000, true, false},
+	parse.AND:    arith{0b00100100, 0b00100000, 0b10000000, 0b100, false, false},
+	parse.CALL:   jmpCall{0, 0b11101000, 0b10011010, 0b11111111, 0b010, 0b011},
 	parse.CBW:    noArgs{0b10011000},
 	parse.CLC:    noArgs{0b11111000},
 	parse.CLD:    noArgs{0b11111100},
@@ -148,18 +189,18 @@ var ops = [...]opPattern{
 	parse.CMC:    noArgs{0b11110101},
 	parse.CMPSB:  noArgs{0b10100110},
 	parse.CMPSW:  noArgs{0b10100111},
-	parse.CMP:    arith{0b00111100, 0b00111000, 0b10000000, 0b111, true},
+	parse.CMP:    arith{0b00111100, 0b00111000, 0b10000000, 0b111, true, false},
 	parse.CWD:    noArgs{0b10011001},
 	parse.DAA:    noArgs{0b00100111},
 	parse.DAS:    noArgs{0b00101111},
-	parse.DEC:    incDec{0b01001000, 0b11111110, 0b001},
-	parse.DIV:    mulDiv{0b11110110, 0b110},
+	parse.DEC:    unary{0b01001000, 0b11111110, 0b001},
+	parse.DIV:    unary{0, 0b11110110, 0b110},
 	parse.HLT:    noArgs{0b11110100},
 	parse.ESC:    esc{},
-	parse.IDIV:   mulDiv{0b11110110, 0b111},
-	parse.IMUL:   mulDiv{0b11110110, 0b101},
-	parse.IN:     in{0b11100100, 0b11101100},
-	parse.INC:    incDec{0b01000000, 0b11111110, 0b000},
+	parse.IDIV:   unary{0, 0b11110110, 0b111},
+	parse.IMUL:   unary{0, 0b11110110, 0b101},
+	parse.IN:     inOut{0b11100100, 0b11101100, false},
+	parse.INC:    unary{0b01000000, 0b11111110, 0b000},
 	parse.INT:    interrupt{0b11001100, 0b11001101},
 	parse.INTO:   noArgs{0b11001110},
 	parse.IRET:   noArgs{0b11001111},
@@ -174,7 +215,7 @@ var ops = [...]opPattern{
 	parse.JGE:    jmpShort{0b01111101},
 	parse.JL:     jmpShort{0b01111100},
 	parse.JLE:    jmpShort{0b01111110},
-	parse.JMP:    jmp{0b11101011, 0b11101001, 0b11101010, 0b11111111, 0b100, 0b101},
+	parse.JMP:    jmpCall{0b11101011, 0b11101001, 0b11101010, 0b11111111, 0b100, 0b101},
 	parse.JNA:    jmpShort{0b01110110},
 	parse.JNAE:   jmpShort{0b01110010},
 	parse.JNB:    jmpShort{0b01110011},
@@ -206,15 +247,15 @@ var ops = [...]opPattern{
 	parse.LOOPNE: jmpShort{0b11100000},
 	parse.LOOPNZ: jmpShort{0b11100000},
 	parse.LOOPZ:  jmpShort{0b11100001},
-	parse.MOV:    mov{0b10100000, 0b10100010, 0b10110000, 0b10001000, 0b11000110, 0b000, 0b10001110, 0b10001100},
+	parse.MOV:    mov{0b10100000, 0b10110000, 0b10001000, 0b11000110, 0b000, 0b10001100},
 	parse.MOVSB:  noArgs{0b10100100},
 	parse.MOVSW:  noArgs{0b10100101},
-	parse.MUL:    mulDiv{0b11110110, 0b100},
-	parse.NEG:    mulDiv{0b11110110, 0b011},
-	parse.NOT:    mulDiv{0b11110110, 0b010},
+	parse.MUL:    unary{0, 0b11110110, 0b100},
+	parse.NEG:    unary{0, 0b11110110, 0b011},
+	parse.NOT:    unary{0, 0b11110110, 0b010},
 	parse.NOP:    noArgs{0b10010000},
-	parse.OR:     arith{0b00001100, 0b00001000, 0b10000000, 0b001, false},
-	parse.OUT:    out{0b11100110, 0b11101110},
+	parse.OR:     arith{0b00001100, 0b00001000, 0b10000000, 0b001, false, false},
+	parse.OUT:    inOut{0b11100110, 0b11101110, true},
 	parse.POP:    stack{0b01011000, 0b10001111, 0b000, 0b00000111},
 	parse.POPF:   noArgs{0b10011101},
 	parse.PUSH:   stack{0b01010000, 0b11111111, 0b110, 0b00000110},
@@ -229,7 +270,7 @@ var ops = [...]opPattern{
 	parse.SAHF:   noArgs{0b10011110},
 	parse.SAL:    rotate{0b11010000, 0b100},
 	parse.SAR:    rotate{0b11010000, 0b111},
-	parse.SBB:    arith{0b00011100, 0b00011000, 0b10000000, 0b011, true},
+	parse.SBB:    arith{0b00011100, 0b00011000, 0b10000000, 0b011, true, false},
 	parse.SCASB:  noArgs{0b10101110},
 	parse.SCASW:  noArgs{0b10101111},
 	parse.SHL:    rotate{0b11010000, 0b100},
@@ -239,12 +280,12 @@ var ops = [...]opPattern{
 	parse.STOSB:  noArgs{0b10101010},
 	parse.STOSW:  noArgs{0b10101011},
 	parse.STI:    noArgs{0b11111011},
-	parse.SUB:    arith{0b00101100, 0b00101000, 0b10000000, 0b101, true},
-	parse.TEST:   test{0b10101000, 0b10000100, 0b11110110, 0b000},
+	parse.SUB:    arith{0b00101100, 0b00101000, 0b10000000, 0b101, true, false},
+	parse.TEST:   arith{0b10101000, 0b10000100, 0b11110110, 0b000, false, true},
 	parse.WAIT:   noArgs{0b10011011},
 	parse.XCHG:   xchg{0b10010000, 0b10000110},
 	parse.XLAT:   noArgs{0b11010111},
-	parse.XOR:    arith{0b00110100, 0b00110000, 0b10000000, 0b110, false},
+	parse.XOR:    arith{0b00110100, 0b00110000, 0b10000000, 0b110, false, false},
 }
 
 type opPattern interface {
@@ -286,6 +327,7 @@ type arith struct {
 	rmImmOpcode byte
 	rmImmExt    byte
 	signExtend  bool
+	isTest      bool
 }
 
 func (o arith) emit(a *assembler, a1, a2 *argument) error {
@@ -293,15 +335,7 @@ func (o arith) emit(a *assembler, a1, a2 *argument) error {
 		return err
 	}
 
-	if a1.IsByte() && a2.IsNoSize() {
-		a2.argType = a2.argType.WithSize(sizeByte)
-	} else if a1.IsWord() && a2.IsNoSize() {
-		a2.argType = a2.argType.WithSize(sizeWord)
-	} else if a1.IsNoSize() && a2.IsByte() {
-		a1.argType = a1.argType.WithSize(sizeByte)
-	} else if a1.IsNoSize() && a2.IsWord() {
-		a1.argType = a1.argType.WithSize(sizeWord)
-	}
+	equateSizes(a1, a2)
 
 	if a1.IsAccumulator() && a2.IsNum() {
 		if a1.IsByte() && a2.IsByte() {
@@ -313,142 +347,29 @@ func (o arith) emit(a *assembler, a1, a2 *argument) error {
 	}
 
 	if (a1.IsReg() || a1.IsPtr()) && a2.IsNum() {
-		if a1.IsByte() && a2.IsByte() {
-			return a.emitRm(o.rmImmOpcode, o.rmImmExt, a1, byte(a2.value))
-		}
-		if a1.IsWord() && a2.IsByte() && o.signExtend && int16(a2.value) <= 127 {
-			return a.emitRm(o.rmImmOpcode|3, o.rmImmExt, a1, byte(a2.value))
-		}
-		if a1.IsWord() && a2.IsWord() {
-			return a.emitRm(o.rmImmOpcode|1, o.rmImmExt, a1, byte(a2.value), byte(a2.value>>8))
+		if err, done := a.emitRmImm(o.rmImmOpcode, o.rmImmExt, a1, a2, o.signExtend); done {
+			return err
 		}
 	}
 	if (a1.IsReg() || a1.IsPtr()) && a2.IsReg() {
-		if a1.IsByte() && a2.IsByte() {
-			return a.emitRm(o.regRmOpcode, byte(a2.regSeg), a1)
-		}
-		if a1.IsWord() && a2.IsWord() {
-			return a.emitRm(o.regRmOpcode|1, byte(a2.regSeg), a1)
+		if err, done := a.emitRmWidth2(o.regRmOpcode, byte(a2.regSeg), a1, a2); done {
+			return err
 		}
 	}
 	if a1.IsReg() && (a2.IsReg() || a2.IsPtr()) {
-		if a1.IsByte() && a2.IsByte() {
-			return a.emitRm(o.regRmOpcode|2, byte(a1.regSeg), a2)
+		op := o.regRmOpcode
+		if !o.isTest {
+			op |= 2
 		}
-		if a1.IsWord() && a2.IsWord() {
-			return a.emitRm(o.regRmOpcode|3, byte(a1.regSeg), a2)
+		if err, done := a.emitRmWidth2(op, byte(a1.regSeg), a2, a1); done {
+			return err
 		}
 	}
 
 	return a.error(fmt.Sprintf("invalid arguments: %s and %s", a1, a2))
 }
 
-type test struct {
-	acImmOpcode byte
-	regRmOpcode byte
-	rmImmOpcode byte
-	rmImmExt    byte
-}
-
-func (o test) emit(a *assembler, a1, a2 *argument) error {
-	if err := expect2Arg(a, a2); err != nil {
-		return err
-	}
-
-	if a1.IsByte() && a2.IsNoSize() {
-		a2.argType = a2.argType.WithSize(sizeByte)
-	} else if a1.IsWord() && a2.IsNoSize() {
-		a2.argType = a2.argType.WithSize(sizeWord)
-	} else if a1.IsNoSize() && a2.IsByte() {
-		a1.argType = a1.argType.WithSize(sizeByte)
-	} else if a1.IsNoSize() && a2.IsWord() {
-		a1.argType = a1.argType.WithSize(sizeWord)
-	}
-
-	if a1.IsAccumulator() && a2.IsNum() {
-		if a1.IsByte() && a2.IsByte() {
-			return a.emitBytes(o.acImmOpcode, byte(a2.value))
-		}
-		if a1.IsWord() && a2.IsWord() {
-			return a.emitBytes(o.acImmOpcode|1, byte(a2.value), byte(a2.value>>8))
-		}
-	}
-	if (a1.IsReg() || a1.IsPtr()) && a2.IsNum() {
-		if a1.IsByte() && a2.IsByte() {
-			return a.emitRm(o.rmImmOpcode, o.rmImmExt, a1, byte(a2.value))
-		}
-		if a1.IsWord() && a2.IsWord() {
-			return a.emitRm(o.rmImmOpcode|1, o.rmImmExt, a1, byte(a2.value), byte(a2.value>>8))
-		}
-	}
-	if (a1.IsReg() || a1.IsPtr()) && a2.IsReg() {
-		if a1.IsByte() && a2.IsByte() {
-			return a.emitRm(o.regRmOpcode, byte(a2.regSeg), a1)
-		}
-		if a1.IsWord() && a2.IsWord() {
-			return a.emitRm(o.regRmOpcode|1, byte(a2.regSeg), a1)
-		}
-	}
-	if a1.IsReg() && (a2.IsReg() || a2.IsPtr()) {
-		if a1.IsByte() && a2.IsByte() {
-			return a.emitRm(o.regRmOpcode, byte(a1.regSeg), a2)
-		}
-		if a1.IsWord() && a2.IsWord() {
-			return a.emitRm(o.regRmOpcode|1, byte(a1.regSeg), a2)
-		}
-	}
-
-	return a.error(fmt.Sprintf("invalid arguments: %s and %s", a1, a2))
-}
-
-type call struct {
-	nearDirectOpcode byte
-	farDirectOpcode  byte
-	indirectOpcode   byte
-	nearExt          byte
-	farExt           byte
-}
-
-func (o call) emit(a *assembler, a1, a2 *argument) error {
-	if err := expect1Arg(a, a1, a2); err != nil {
-		return err
-	}
-
-	if (a1.IsNum() && a1.IsByte()) || a1.IsNoSize() {
-		a1.argType = a1.argType.WithSize(sizeWord)
-	}
-	if a1.distance == 0 && a1.IsWord() {
-		a1.distance = near
-	} else if a1.distance == 0 && a1.IsDword() {
-		a1.distance = far
-	} else if a1.distance == near && a1.IsNoSize() {
-		a1.argType = a1.argType.WithSize(sizeWord)
-	} else if a1.distance == far && a1.IsNoSize() {
-		a1.argType = a1.argType.WithSize(sizeDword)
-	}
-
-	if a1.IsNum() {
-		if a1.IsWord() && a1.distance == near {
-			disp := a1.value - (a.pc + 3)
-			return a.emitBytes(o.nearDirectOpcode, byte(disp), byte(disp>>8))
-		}
-		if a1.IsDword() && a1.distance == far {
-			return a.emitBytes(o.farDirectOpcode, byte(a1.value2), byte(a1.value2>>8), byte(a1.value), byte(a1.value>>8))
-		}
-	}
-	if a1.IsReg() || a1.IsPtr() {
-		if a1.IsWord() && a1.distance == near {
-			return a.emitRm(o.indirectOpcode, o.nearExt, a1)
-		}
-		if a1.IsDword() && a1.distance == far {
-			return a.emitRm(o.indirectOpcode, o.farExt, a1)
-		}
-	}
-
-	return a.error(fmt.Sprintf("invalid argument: %s", a1))
-}
-
-type jmp struct {
+type jmpCall struct {
 	shortDirectOpcode byte
 	nearDirectOpcode  byte
 	farDirectOpcode   byte
@@ -457,7 +378,7 @@ type jmp struct {
 	farExt            byte
 }
 
-func (o jmp) emit(a *assembler, a1, a2 *argument) error {
+func (o jmpCall) emit(a *assembler, a1, a2 *argument) error {
 	if err := expect1Arg(a, a1, a2); err != nil {
 		return err
 	}
@@ -483,12 +404,8 @@ func (o jmp) emit(a *assembler, a1, a2 *argument) error {
 	}
 
 	if a1.IsNum() {
-		if a1.IsWord() && a1.distance == short {
-			disp := int16(a1.value - (a.pc + 2))
-			if a.pass == 2 && (disp < -128 || disp > 127) {
-				return a.error("destination address is too far for a short jump")
-			}
-			return a.emitBytes(o.shortDirectOpcode, byte(disp))
+		if a1.IsWord() && a1.distance == short && o.shortDirectOpcode != 0 {
+			return a.emitShortJmp(o.shortDirectOpcode, a1)
 		}
 		if a1.IsWord() && a1.distance == near {
 			disp := a1.value - (a.pc + 3)
@@ -510,48 +427,23 @@ func (o jmp) emit(a *assembler, a1, a2 *argument) error {
 	return a.error(fmt.Sprintf("invalid argument: %s", a1))
 }
 
-type incDec struct {
+type unary struct {
 	regOpcode byte
 	rmOpcode  byte
 	rmExt     byte
 }
 
-func (o incDec) emit(a *assembler, a1, a2 *argument) error {
+func (o unary) emit(a *assembler, a1, a2 *argument) error {
 	if err := expect1Arg(a, a1, a2); err != nil {
 		return err
 	}
 
-	if a1.IsWord() {
-		if a1.IsReg() {
-			return a.emitByte(o.regOpcode | byte(a1.regSeg))
-		}
-		if a1.IsPtr() {
-			return a.emitRm(o.rmOpcode|1, o.rmExt, a1)
-		}
+	if a1.IsWord() && a1.IsReg() && o.regOpcode != 0 {
+		return a.emitByte(o.regOpcode | byte(a1.regSeg))
 	}
-	if a1.IsByte() && (a1.IsReg() || a1.IsPtr()) {
-		return a.emitRm(o.rmOpcode, o.rmExt, a1)
-	}
-
-	return a.error(fmt.Sprintf("invalid argument: %s", a1))
-}
-
-type mulDiv struct {
-	opcode byte
-	ext    byte
-}
-
-func (o mulDiv) emit(a *assembler, a1, a2 *argument) error {
-	if err := expect1Arg(a, a1, a2); err != nil {
-		return err
-	}
-
 	if a1.IsReg() || a1.IsPtr() {
-		if a1.IsByte() {
-			return a.emitRm(o.opcode, o.ext, a1)
-		}
-		if a1.IsWord() {
-			return a.emitRm(o.opcode|1, o.ext, a1)
+		if err, done := a.emitRmWidth1(o.rmOpcode, o.rmExt, a1); done {
+			return err
 		}
 	}
 
@@ -574,14 +466,19 @@ func (o esc) emit(a *assembler, a1, a2 *argument) error {
 	return a.error(fmt.Sprintf("invalid argument: %s", a1))
 }
 
-type in struct {
+type inOut struct {
 	fixedPortOpcode    byte
 	variablePortOpcode byte
+	isOut              bool
 }
 
-func (o in) emit(a *assembler, a1, a2 *argument) error {
+func (o inOut) emit(a *assembler, a1, a2 *argument) error {
 	if err := expect2Arg(a, a2); err != nil {
 		return err
+	}
+
+	if o.isOut {
+		a1, a2 = a2, a1
 	}
 
 	if a1.IsAccumulator() && a2.IsNum() && a2.IsByte() {
@@ -597,36 +494,6 @@ func (o in) emit(a *assembler, a1, a2 *argument) error {
 			return a.emitByte(o.variablePortOpcode)
 		}
 		if a1.IsWord() {
-			return a.emitByte(o.variablePortOpcode | 1)
-		}
-	}
-
-	return a.error(fmt.Sprintf("invalid arguments: %s and %s", a1, a2))
-}
-
-type out struct {
-	fixedPortOpcode    byte
-	variablePortOpcode byte
-}
-
-func (o out) emit(a *assembler, a1, a2 *argument) error {
-	if err := expect2Arg(a, a2); err != nil {
-		return err
-	}
-
-	if a1.IsNum() && a1.IsByte() && a2.IsAccumulator() {
-		if a2.IsByte() {
-			return a.emitBytes(o.fixedPortOpcode, byte(a1.value))
-		}
-		if a2.IsWord() {
-			return a.emitBytes(o.fixedPortOpcode|1, byte(a1.value))
-		}
-	}
-	if a1.IsReg() && a1.IsWord() && a1.regSeg == DX && a2.IsAccumulator() {
-		if a2.IsByte() {
-			return a.emitByte(o.variablePortOpcode)
-		}
-		if a2.IsWord() {
 			return a.emitByte(o.variablePortOpcode | 1)
 		}
 	}
@@ -664,11 +531,7 @@ func (o jmpShort) emit(a *assembler, a1, a2 *argument) error {
 	}
 
 	if a1.IsNum() && a1.IsWord() {
-		disp := int16(a1.value - (a.pc + 2))
-		if a.pass == 2 && (disp < -128 || disp > 127) {
-			return a.error("label is too far for a short jump")
-		}
-		return a.emitBytes(o.opcode, byte(disp))
+		return a.emitShortJmp(o.opcode, a1)
 	}
 
 	return a.error(fmt.Sprintf("invalid argument: %s", a1))
@@ -692,12 +555,10 @@ func (o loadAddr) emit(a *assembler, a1, a2 *argument) error {
 
 type mov struct {
 	accMemOpcode byte
-	memAccOpcode byte
 	regImmOpcode byte
 	regRmOpcode  byte
 	rmImmOpcode  byte
 	rmImmExt     byte
-	segRmOpcode  byte
 	rmSegOpcode  byte
 }
 
@@ -706,15 +567,7 @@ func (o mov) emit(a *assembler, a1, a2 *argument) error {
 		return err
 	}
 
-	if a1.IsByte() && a2.IsNoSize() {
-		a2.argType = a2.argType.WithSize(sizeByte)
-	} else if a1.IsWord() && a2.IsNoSize() {
-		a2.argType = a2.argType.WithSize(sizeWord)
-	} else if a1.IsNoSize() && a2.IsByte() {
-		a1.argType = a1.argType.WithSize(sizeByte)
-	} else if a1.IsNoSize() && a2.IsWord() {
-		a1.argType = a1.argType.WithSize(sizeWord)
-	}
+	equateSizes(a1, a2)
 
 	if a1.IsAccumulator() && a2.IsPtr() && a2.eaMode == eaDirect {
 		if a1.IsByte() && a2.IsByte() {
@@ -726,10 +579,10 @@ func (o mov) emit(a *assembler, a1, a2 *argument) error {
 	}
 	if a1.IsPtr() && a1.eaMode == eaDirect && a2.IsAccumulator() {
 		if a1.IsByte() && a2.IsByte() {
-			return a.emitBytes(o.memAccOpcode, byte(a1.value), byte(a1.value>>8))
+			return a.emitBytes(o.accMemOpcode|2, byte(a1.value), byte(a1.value>>8))
 		}
 		if a1.IsWord() && a2.IsWord() {
-			return a.emitBytes(o.memAccOpcode|1, byte(a1.value), byte(a1.value>>8))
+			return a.emitBytes(o.accMemOpcode|3, byte(a1.value), byte(a1.value>>8))
 		}
 	}
 	if a1.IsReg() && a2.IsNum() {
@@ -741,34 +594,25 @@ func (o mov) emit(a *assembler, a1, a2 *argument) error {
 		}
 	}
 	if (a1.IsReg() || a1.IsPtr()) && a2.IsReg() {
-		if a1.IsByte() && a2.IsByte() {
-			return a.emitRm(o.regRmOpcode, byte(a2.regSeg), a1)
-		}
-		if a1.IsWord() && a2.IsWord() {
-			return a.emitRm(o.regRmOpcode|1, byte(a2.regSeg), a1)
+		if err, done := a.emitRmWidth2(o.regRmOpcode, byte(a2.regSeg), a1, a2); done {
+			return err
 		}
 	}
 	if a1.IsReg() && (a2.IsReg() || a2.IsPtr()) {
-		if a1.IsByte() && a2.IsByte() {
-			return a.emitRm(o.regRmOpcode|2, byte(a1.regSeg), a2)
-		}
-		if a1.IsWord() && a2.IsWord() {
-			return a.emitRm(o.regRmOpcode|3, byte(a1.regSeg), a2)
+		if err, done := a.emitRmWidth2(o.regRmOpcode|2, byte(a1.regSeg), a2, a1); done {
+			return err
 		}
 	}
 	if (a1.IsReg() || a1.IsPtr()) && a2.IsNum() {
-		if a1.IsByte() && a2.IsByte() {
-			return a.emitRm(o.rmImmOpcode, o.rmImmExt, a1, byte(a2.value))
+		if err, done := a.emitRmImm(o.rmImmOpcode, o.rmImmExt, a1, a2, false); done {
+			return err
 		}
-		if a1.IsWord() && a2.IsWord() {
-			return a.emitRm(o.rmImmOpcode|1, o.rmImmExt, a1, byte(a2.value), byte(a2.value>>8))
-		}
-	}
-	if a1.IsSeg() && a1.regSeg != CS && (a2.IsReg() || a2.IsPtr()) && a2.IsWord() {
-		return a.emitRm(o.segRmOpcode, byte(a1.regSeg), a2)
 	}
 	if (a1.IsReg() || a1.IsPtr()) && a1.IsWord() && a2.IsSeg() {
 		return a.emitRm(o.rmSegOpcode, byte(a2.regSeg), a1)
+	}
+	if a1.IsSeg() && a1.regSeg != CS && (a2.IsReg() || a2.IsPtr()) && a2.IsWord() {
+		return a.emitRm(o.rmSegOpcode|2, byte(a1.regSeg), a2)
 	}
 
 	return a.error(fmt.Sprintf("invalid arguments: %s and %s", a1, a2))
@@ -816,19 +660,13 @@ func (o rotate) emit(a *assembler, a1, a2 *argument) error {
 	}
 
 	if (a1.IsReg() || a1.IsPtr()) && a2.IsNum() && a2.IsWord() && a2.value == 1 {
-		if a1.IsByte() {
-			return a.emitRm(o.opcode, o.ext, a1)
-		}
-		if a1.IsWord() {
-			return a.emitRm(o.opcode|1, o.ext, a1)
+		if err, done := a.emitRmWidth1(o.opcode, o.ext, a1); done {
+			return err
 		}
 	}
 	if (a1.IsReg() || a1.IsPtr()) && a2.IsReg() && a2.IsByte() && a2.regSeg == CL {
-		if a1.IsByte() {
-			return a.emitRm(o.opcode|2, o.ext, a1)
-		}
-		if a1.IsWord() {
-			return a.emitRm(o.opcode|3, o.ext, a1)
+		if err, done := a.emitRmWidth1(o.opcode|2, o.ext, a1); done {
+			return err
 		}
 	}
 
@@ -866,15 +704,7 @@ func (o xchg) emit(a *assembler, a1, a2 *argument) error {
 		return err
 	}
 
-	if a1.IsByte() && a2.IsNoSize() {
-		a2.argType = a2.argType.WithSize(sizeByte)
-	} else if a1.IsWord() && a2.IsNoSize() {
-		a2.argType = a2.argType.WithSize(sizeWord)
-	} else if a1.IsNoSize() && a2.IsByte() {
-		a1.argType = a1.argType.WithSize(sizeByte)
-	} else if a1.IsNoSize() && a2.IsWord() {
-		a1.argType = a1.argType.WithSize(sizeWord)
-	}
+	equateSizes(a1, a2)
 
 	if a1.IsAccumulator() && a1.IsWord() && a2.IsReg() && a2.IsWord() {
 		return a.emitByte(o.accRegOpcode | byte(a2.regSeg))
@@ -883,19 +713,13 @@ func (o xchg) emit(a *assembler, a1, a2 *argument) error {
 		return a.emitByte(o.accRegOpcode | byte(a1.regSeg))
 	}
 	if (a1.IsReg() || a1.IsPtr()) && a2.IsReg() {
-		if a1.IsByte() && a2.IsByte() {
-			return a.emitRm(o.regRmOpcode, byte(a2.regSeg), a1)
-		}
-		if a1.IsWord() && a2.IsWord() {
-			return a.emitRm(o.regRmOpcode|1, byte(a2.regSeg), a1)
+		if err, done := a.emitRmWidth2(o.regRmOpcode, byte(a2.regSeg), a1, a2); done {
+			return err
 		}
 	}
 	if a1.IsReg() && (a2.IsReg() || a2.IsPtr()) {
-		if a1.IsByte() && a2.IsByte() {
-			return a.emitRm(o.regRmOpcode, byte(a1.regSeg), a2)
-		}
-		if a1.IsWord() && a2.IsWord() {
-			return a.emitRm(o.regRmOpcode|1, byte(a1.regSeg), a2)
+		if err, done := a.emitRmWidth2(o.regRmOpcode, byte(a1.regSeg), a2, a1); done {
+			return err
 		}
 	}
 
@@ -924,4 +748,16 @@ func expect2Arg(a *assembler, a2 *argument) error {
 		return a.error("missing argument")
 	}
 	return nil
+}
+
+func equateSizes(a1, a2 *argument) {
+	if a1.IsByte() && a2.IsNoSize() {
+		a2.argType = a2.argType.WithSize(sizeByte)
+	} else if a1.IsWord() && a2.IsNoSize() {
+		a2.argType = a2.argType.WithSize(sizeWord)
+	} else if a1.IsNoSize() && a2.IsByte() {
+		a1.argType = a1.argType.WithSize(sizeByte)
+	} else if a1.IsNoSize() && a2.IsWord() {
+		a1.argType = a1.argType.WithSize(sizeWord)
+	}
 }
