@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jtarrio/pasm/assemble"
-	"github.com/jtarrio/pasm/parse"
+	"github.com/jtarrio/pasm/go/assemble"
+	"github.com/jtarrio/pasm/go/parse"
 )
 
 func help() {

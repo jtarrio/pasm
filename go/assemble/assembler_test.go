@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jtarrio/pasm/assemble"
-	"github.com/jtarrio/pasm/parse"
+	"github.com/jtarrio/pasm/go/assemble"
+	"github.com/jtarrio/pasm/go/parse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

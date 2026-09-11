@@ -3,7 +3,7 @@ package assemble
 import (
 	"fmt"
 
-	"github.com/jtarrio/pasm/parse"
+	"github.com/jtarrio/pasm/go/parse"
 )
 
 func (a *assembler) emitByte(b byte) error {

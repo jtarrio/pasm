@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/jtarrio/pasm/parse"
+	"github.com/jtarrio/pasm/go/parse"
 )
 
 func Assemble(input parse.Lexer, output io.Writer) error {

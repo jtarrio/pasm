@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jtarrio/pasm/parse"
+	"github.com/jtarrio/pasm/go/parse"
 )
 
 // nonByteReader wraps an io.Reader so it does NOT implement io.ByteReader.
