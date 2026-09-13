@@ -388,7 +388,7 @@ func (o jmpCall) emit(a *assembler, a1, a2 *argument) error {
 	}
 	if a1.distance == 0 && a1.IsWord() && a1.IsNum() {
 		disp := int16(a1.value - (a.pc + 2))
-		if disp >= -128 && disp < 0 {
+		if o.shortDirectOpcode != 0 && disp >= -128 && disp < 0 {
 			a1.distance = short
 		} else {
 			a1.distance = near

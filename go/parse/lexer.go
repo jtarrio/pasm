@@ -56,7 +56,7 @@ func (l *lexer) start() error {
 	if err := l.readNext(); err != nil {
 		return err
 	}
-	if _, err := l.skipWhitespace(); err != nil {
+	if _, _, _, err := l.skipWhitespace(); err != nil {
 		return err
 	}
 	return nil
@@ -88,22 +88,32 @@ func (l *lexer) readNext() error {
 	return nil
 }
 
-func (l *lexer) skipWhitespace() (bool, error) {
-	eol := false
+func (l *lexer) skipWhitespace() (eol bool, eolLine, eolCol uint, err error) {
+	eol = false
+	eolLine = 0
+	eolCol = 0
 	comment := false
 	for {
 		if l.eof {
-			return true, nil
+			if !eol {
+				eolLine = l.line
+				eolCol = l.col
+			}
+			return true, eolLine, eolCol, nil
 		} else if l.c == ';' {
 			comment = true
 		} else if l.c == '\n' {
-			eol = true
+			if !eol {
+				eolLine = l.line
+				eolCol = l.col
+				eol = true
+			}
 			comment = false
 		} else if !comment && l.c != ' ' && l.c != '\t' && l.c != '\r' {
-			return eol, nil
+			return eol, eolLine, eolCol, nil
 		}
 		if err := l.readNext(); err != nil {
-			return false, err
+			return false, 0, 0, err
 		}
 	}
 }
@@ -125,15 +135,15 @@ func (l *lexer) Next() error {
 		}
 		return nil
 	}
-	eol, err := l.skipWhitespace()
+	eol, eolLine, eolCol, err := l.skipWhitespace()
 	if err != nil {
 		return err
 	}
-	l.token = Token{Line: l.line, Col: l.col}
 	if eol {
-		l.token.Type = EOL
+		l.token = Token{Type: EOL, Line: eolLine, Col: eolCol}
 		return nil
 	}
+	l.token = Token{Line: l.line, Col: l.col}
 	return l.readToken()
 }
 
