@@ -11,6 +11,7 @@ LX_BUFSIZE      EQU 1024        ; Size of the read buffer
 LX_BUFFER       DB LX_BUFSIZE DUP(0)  ; Read buffer
 LX_BUFLEN       DW 0            ; Length of the read buffer
 LX_BUFPOS       DW 0            ; Position in the read buffer
+LX_EQUTOKEN     DW 0            ; Current token in EQU expansion
 LXC_END:                        ; End of the lexer context
 
 ; Procedure LEXER_START.
@@ -23,15 +24,9 @@ LEXER_START:
 
 ; Procedure LEXER_RESTART.
 ; Reinitializes the lexer context.
+; Destroys:
+;   AX, BX, CX, DX, DI, ES, flags
 LEXER_RESTART:
-    PUSH AX
-    PUSH BX
-    PUSH CX
-    PUSH DX
-    PUSH DI
-    PUSH ES
-    PUSHF
-
     ; Seek from start
     MOV AX, 4200h
     MOV BX, [LX_FILE_HANDLE]
@@ -53,30 +48,47 @@ LEXER_RESTART:
     CALL LEXER_READNEXT_
     CALL LEXER_SKIPWHITESPACE_
     MOV [LX_EOL], 0
-
-    POPF
-    POP ES
-    POP DI
-    POP DX
-    POP CX
-    POP BX
-    POP AX
     RET
 _lr_error_seek_:
     JMP ERROR_SEEK
 
 
 ; Procedure LEXER_NEXT
-; Reads the next token from the input.
+; Reads the next token from EQU or the input
+; Outputs:
+;   [TOKEN] the next token
+; Destroys:
+;   AX, BX, CX, DX, SI, DI, flags
 LEXER_NEXT:
-    PUSH AX
-    PUSH BX
-    PUSH CX
-    PUSH DX
-    PUSH SI
-    PUSH DI
-    PUSHF
+    CMP WORD PTR [LX_EQUTOKEN], 0   ; Is there an EQU token?
+    JZ _ln_read_from_input_         ; No; read the next token as usual
 
+    PUSH DS                 ; We are expanding an EQU
+    PUSH ES
+    PUSH DS
+    POP ES
+    MOV DI, TOKEN           ; Set ES:DI to the address of TOKEN
+    MOV SI, [LX_EQUTOKEN]
+    MOV DS, [MACROSEG]      ; Set DS:SI to the EQU token's address
+    CMP BYTE PTR DS:[SI + TOKEN_TYPE], TK_EOF
+    JZ _ln_endequ_          ; If EOF token, stop reading EQU tokens
+    CALL TOKEN_LENGTH
+    CLD
+    REP MOVSB               ; Copy the EQUTOKEN to TOKEN
+    CMP BYTE PTR DS:[SI], TK_EOF
+    JNZ _ln_moreequ_        ; If EOF, clear the next token's position
+    XOR SI, SI
+_ln_moreequ_:
+    POP ES
+    POP DS
+    MOV [LX_EQUTOKEN], SI   ; And now save the next token's position
+    RET
+_ln_endequ_:
+    MOV WORD PTR ES:[LX_EQUTOKEN], 0    ; Blank the EQU token address
+    POP ES
+    POP DS
+
+_ln_read_from_input_:
     CMP [LX_EOF], 0
     JZ _ln_noeof_
     MOV AX, [LINE]          ; If EOF
@@ -89,10 +101,10 @@ LEXER_NEXT:
     CMP AL, TK_EOF          ; EOL otherwise
     JZ _ln_eof_
     MOV BYTE PTR [TOKEN + TOKEN_TYPE], TK_EOL
-    JMP _ln_ret_
+    RET
 _ln_eof_:
     MOV BYTE PTR [TOKEN + TOKEN_TYPE], TK_EOF
-    JMP _ln_ret_
+    RET
 
 _ln_noeof_:
     CALL LEXER_SKIPWHITESPACE_
@@ -103,23 +115,13 @@ _ln_noeof_:
     MOV WORD PTR [TOKEN + TOKEN_LINE], AX
     MOV WORD PTR [TOKEN + TOKEN_COL], BX
     MOV WORD PTR [TOKEN + TOKEN_NUMBER], 0
-    CALL LEXER_READTOKEN_   ; read the next token
-    JMP _ln_ret_
+    JMP LEXER_READTOKEN_   ; read the next token
 _ln_eol_:
     MOV BYTE PTR [TOKEN + TOKEN_TYPE], TK_EOL
-
-_ln_ret_:
-    POPF
-    POP DI
-    POP SI
-    POP DX
-    POP CX
-    POP BX
-    POP AX
     RET
 
 ; Procedure LEXER_READTOKEN_
-; Reads the next token
+; Reads the next token from the input
 ; Outputs:
 ;   [TOKEN] the next token
 ; Destroys:
@@ -373,6 +375,13 @@ _lri_done_:
     CMP AX, -1
     MOV AH, TK_KEYWORD
     JNZ _lri_set_type_
+    PUSH DS
+    CALL GET_EQU_FIRST_TOKEN        ; Is this an EQU?
+    POP DS                          ;
+    JC _lri_no_equ_
+    MOV [LX_EQUTOKEN], SI           ; Yes; set the first EQU token
+    JMP LEXER_NEXT                  ; and go back to LEXER_NEXT
+_lri_no_equ_:
                                     ; It is a regular identifier
     MOV BYTE PTR [TOKEN + TOKEN_TYPE], TK_IDENTIFIER
     RET
@@ -490,77 +499,3 @@ _lsws_next_:
     CALL LEXER_READNEXT_
     JMP _lsws_start_
 
-
-ERROR_SEEK:
-    MOV DX, error_seek_msg
-    JMP PRINT_ERROR
-error_seek_msg DB 'Seek error$'
-
-ERROR_READ:
-    MOV DX, error_read_msg
-    JMP PRINT_ERROR
-error_read_msg DB 'Read error$'
-
-ERROR_INVALID_CHAR:
-    MOV AL, [LX_RAWC]
-    MOV [error_invalid_char_chr], AL
-    MOV DX, error_invalid_char_msg
-    JMP PRINT_ERROR
-error_invalid_char_msg  DB 'Invalid character ',39
-error_invalid_char_chr  DB 0
-                        DB 39,'$'
-
-ERROR_UNEXPECTED_EOF:
-    MOV DX, error_unexpected_eof_msg
-    JMP PRINT_ERROR
-error_unexpected_eof_msg DB 'Unexpected end of file$'
-
-ERROR_UNEXPECTED_EOL:
-    MOV DX, error_unexpected_eol_msg
-    JMP PRINT_ERROR
-error_unexpected_eol_msg DB 'Unexpected end of line$'
-
-ERROR_STRING_TOO_LONG:
-    MOV DX, error_string_too_long_msg
-    JMP PRINT_ERROR
-error_string_too_long_msg DB 'String too long$'
-
-ERROR_IDENTIFIER_TOO_LONG:
-    MOV DX, error_identifier_too_long_msg
-    JMP PRINT_ERROR
-error_identifier_too_long_msg DB 'Identifier too long$'
-
-ERROR_NUMBER_TOO_LARGE:
-    MOV DX, error_number_too_large_msg
-    JMP PRINT_ERROR
-error_number_too_large_msg DB 'Number too large$'
-
-ERROR_INVALID_DIGIT:
-    MOV DX, error_invalid_digit_msg
-    JMP PRINT_ERROR
-error_invalid_digit_msg DB 'Invalid digit$'
-
-
-; Procedure PRINT_ERROR
-; Displays an error message and exits.
-; Inputs:
-;   DX the error message
-PRINT_ERROR:
-    CMP [LINE], 0
-    JZ _pe_noline_
-    PUSH DX
-    MOV AX, [LINE]
-    CALL PRINT_UINT16_DEC
-    MOV AH, 09h
-    MOV DX, _pe_colon_
-    INT 21h
-    POP DX
-_pe_noline_:
-    MOV AH, 09h     ; Print string
-    INT 21h
-    MOV DX, _pe_crlf_
-    INT 21h
-    MOV AX, 4C01h   ; Exit with status 1
-    INT 21h
-_pe_colon_  DB ': $'
-_pe_crlf_   DB 13, 10, '$'

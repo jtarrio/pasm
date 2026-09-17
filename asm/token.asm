@@ -29,14 +29,14 @@ TK_COLON	    EQU 9
 TK_REGISTER	    EQU 10
 TK_SEGMENT	    EQU 11
 TK_KEYWORD	    EQU 12
-TK_IDENTIFIER	EQU 13
-TK_NUMBER	    EQU 14
+TK_NUMBER	    EQU 13
+TK_IDENTIFIER	EQU 14
 TK_STRING	    EQU 15
 
 TOKENS  DB 11, 'end of file', 11, 'end of line', 12, 'left bracket', 13, 'right bracket'
         DB 16, 'left parenthesis', 17, 'right parenthesis', 9, 'plus sign', 10, 'minus sign'
         DB 5, 'comma', 5, 'colon', 8, 'register', 7, 'segment'
-        DB 7, 'keyword', 10, 'identifier', 6, 'number', 6, 'string', 0
+        DB 7, 'keyword', 6, 'number', 10, 'identifier', 6, 'string', 0
 
 ; Registers
 REG_AX  EQU 0
@@ -281,4 +281,29 @@ get_symbol_start_:
 get_symbol_not_found_:
     MOV DI, -1
 get_symbol_found_:
+    RET
+
+; Procedure TOKEN_LENGTH
+; Returns the length of a token
+; Inputs:
+;   DS:SI the token's location
+; Outputs:
+;   CX the token's length
+; Destroys:
+;   AX, flags
+TOKEN_LENGTH:
+    MOV AL, [SI + TOKEN_TYPE]
+    CMP AL, TK_REGISTER
+    MOV CX, TOKEN_VALUE - TOKEN_TYPE
+    JB _tl_havesize_
+    CMP AL, TK_NUMBER
+    MOV CX, 1 + TOKEN_VALUE - TOKEN_TYPE
+    JB _tl_havesize_
+    CMP AL, TK_IDENTIFIER
+    MOV CX, 2 + TOKEN_VALUE - TOKEN_TYPE
+    JB _tl_havesize_
+    XOR CX, CX
+    MOV CL, [SI + TOKEN_STRLEN]
+    ADD CX, TOKEN_STR
+_tl_havesize_:
     RET
