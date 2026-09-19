@@ -14,17 +14,18 @@ ARG_STRMAXLEN   EQU 255
 ARG_MAXSIZE     EQU ARG_STR + ARG_STRMAXLEN
 
 ; Argument types
+ARGT_NONE   EQU 0   ; No argument
 ARGT_NUM    EQU 1   ; Number (byte, word, dword)
 ARGT_STR    EQU 2   ; String
 ARGT_REG    EQU 3   ; Register
 ARGT_SEG    EQU 4   ; Segment
 ARGT_PTR    EQU 5   ; Pointer
-ARGT_MASK   EQU 0Fh
+ARGT_MASK   EQU 00001111b
 ; Argument sizes
 ARGS_BYTE   EQU 10h ; Byte
 ARGS_WORD   EQU 20h ; Word
 ARGS_DWORD  EQU 40h ; Dword
-ARGS_MASK   EQU 0F0h
+ARGS_MASK   EQU 11110000b
 
 ; Registers
 AREG_AX  EQU 0

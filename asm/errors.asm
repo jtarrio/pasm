@@ -92,6 +92,11 @@ ERROR_EXPECTED_KEYWORD:
     JMP PRINT_ERROR_LINE
 _eem_kw DB 'Expected a keyword$'
 
+ERROR_EXPECTED_INSTRUCTION:
+    MOV DX, _eem_instruction
+    JMP PRINT_ERROR_LINE
+_eem_instruction DB 'Expected an instruction$'
+
 ERROR_EXPECTED_NUMBER:
     MOV DX, _eem_num
     JMP PRINT_ERROR_LINE
@@ -132,6 +137,11 @@ ERROR_EXPECTED_RPAREN:
     JMP PRINT_ERROR_LINE
 _eem_rparen DB 'Expected a right parenthesis$'
 
+ERROR_EXPECTED_COLON:
+    MOV DX, _eem_colon
+    JMP PRINT_ERROR_LINE
+_eem_colon DB 'Expected a colon'
+
 ERROR_EXPECTED_LBRACKET:
     MOV DX, _eem_lbracket
     JMP PRINT_ERROR_LINE
@@ -161,6 +171,36 @@ ERROR_OVERFLOW:
     MOV DX, _em_overflow_msg
     JMP PRINT_ERROR_LINE
 _em_overflow_msg DB 'Overflow$'
+
+ERROR_EXPECTED_SIZE_DISTANCE:
+    MOV DX, _eem_size_distance
+    JMP PRINT_ERROR_LINE
+_eem_size_distance DB 'Expected a size or distance specifier$'
+
+ERROR_EXPECTED_PTR:
+    MOV DX, _eem_ptr
+    JMP PRINT_ERROR_LINE
+_eem_ptr DB 'Expected PTR$'
+
+ERROR_UNEXPECTED_DISTANCE:
+    MOV DX, _eum_distance
+    JMP PRINT_ERROR_LINE
+_eum_distance DB 'Unexpected distance specifier$'
+
+ERROR_INVALID_SHORT_TARGET:
+    MOV DX, _em_invalid_short_target
+    JMP PRINT_ERROR_LINE
+_em_invalid_short_target DB 'Invalid short target$'
+
+ERROR_INVALID_NEAR_TARGET:
+    MOV DX, _em_invalid_near_target
+    JMP PRINT_ERROR_LINE
+_em_invalid_near_target DB 'Invalid near target$'
+
+ERROR_INVALID_FAR_TARGET:
+    MOV DX, _em_invalid_far_target
+    JMP PRINT_ERROR_LINE
+_em_invalid_far_target DB 'Invalid far target$'
 
 ERROR_UNDERFLOW:
     MOV DX, _em_underflow_msg

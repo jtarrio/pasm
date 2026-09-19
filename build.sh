@@ -9,6 +9,7 @@ cat \
   asm/macros.asm \
   asm/argument.asm \
   asm/assemble.asm \
+  asm/emit.asm \
   asm/util.asm \
   asm/main.asm \
 > pasm.asm

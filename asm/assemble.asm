@@ -130,7 +130,7 @@ PARSE_ORG_DIRECTIVE_:
     CMP_TOKEN_TYPE TK_NUMBER    ; Number?
     JNZ _porg_nonum_
     MOV AX, WORD PTR [TOKEN + TOKEN_NUMBER]
-    CALL EMIT_ORG_              ; Yes, emit an ORG
+    CALL EMIT_ORG               ; Yes, emit an ORG
     JMP LEXER_NEXT              ; Get next token and return
 _porg_nonum_:
     JMP ERROR_EXPECTED_NUMBER
@@ -153,13 +153,84 @@ _pequ_loop_:
 _pequ_done_:
     RET
 
+; Procedure PARSE_STATEMENT_
+; Parses a statement
+; Destroys:
+;   AX, BX, CX, DX, SI, DI, flags
+PARSE_STATEMENT_:
+    LD_TOKEN_VALUE          ; Keyword
+    CMP AL, KW_LOCK         ; >= LOCK?
+    JB _pstmt_noprefix_
+    CMP AL, KW_REPZ         ; <= REPZ?
+    JA _pstmt_noprefix_
+
+    CALL EMIT_PREFIX        ; Yes; emit the prefix
+    CALL LEXER_NEXT
+    CMP_TOKEN_TYPE TK_EOL   ; If EOL, done
+    JZ _pstmt_ret_
+    CMP_TOKEN_TYPE TK_KEYWORD
+    JNZ _pstmt_nokeyword_
+    JMP PARSE_STATEMENT_    ; otherwise, parse the following statement
+_pstmt_ret_:
+    RET
+_pstmt_nokeyword_:
+    JMP ERROR_EXPECTED_INSTRUCTION
+
+_pstmt_noprefix_:
+    CMP AL, KW_DB           ; >= DB?
+    JB _pstmt_nodata_
+    CMP AL, KW_DW           ; <= DW?
+    JA _pstmt_nodata_
+
+    JMP PARSE_DATA_STMT_    ; Yes; parse the data statement
+
+_pstmt_nodata_:
+    CMP AL, KW_AAA
+    JAE _pstmt_instr_
+    JMP ERROR_EXPECTED_INSTRUCTION
+
+_pstmt_instr_:
+    MOV BYTE PTR [ARG1 + ARG_TYPE], ARGT_NONE
+    MOV BYTE PTR [ARG2 + ARG_TYPE], ARGT_NONE
+    PUSH AX
+    CALL LEXER_NEXT
+    CMP_TOKEN_TYPE TK_EOL   ; EOL? Emit the instruction
+    JNZ _pstmt_arg1_
+    POP AX
+    JMP EMIT_INSTRUCTION
+
+_pstmt_arg1_:
+    MOV DI, ARG1
+    CALL CLEAR_ARGUMENT_
+    CALL PARSE_ARGUMENT_    ; Parse the first argument
+    CMP_TOKEN_TYPE TK_EOL   ; EOL? Emit the instruction
+    JNZ _pstmt_comma_
+    POP AX
+    JMP EMIT_INSTRUCTION
+
+_pstmt_comma_:
+    CMP_TOKEN_TYPE TK_COMMA ; Expect a comma between arguments
+    JZ _pstmt_arg2_
+    JMP ERROR_EXPECTED_COMMA
+
+_pstmt_arg2_:
+    CALL LEXER_NEXT
+    MOV DI, ARG2
+    CALL CLEAR_ARGUMENT_
+    CALL PARSE_ARGUMENT_    ; Parse the second argument
+    POP AX
+    JMP EMIT_INSTRUCTION
+
+
 ; Procedure PARSE_DATA_STMT_
 ; Parses a data statement (DB, DW, DD)
 ; Destroys:
 ;   AX, BX, CX, DX, SI, DI, flags
 PARSE_DATA_STMT_:
     LD_TOKEN_VALUE      ; Put the keyword in AL
+    PUSH AX
     CALL LEXER_NEXT
+    POP AX
     CMP AL, KW_DB       ; DB?
     JZ PARSE_DB_SEQ_
     CMP AL, KW_DW       ; DW?
@@ -172,6 +243,7 @@ PARSE_DATA_STMT_:
 ;   AX, BX, CX, DX, SI, DI, flags
 PARSE_DB_SEQ_:
     MOV DI, ARG1
+    CALL CLEAR_ARGUMENT_
     CALL PARSE_ARGUMENT_        ; Saves the argument in [DI]
     CALL PARSE_DUP_             ; Puts count in CX, argument in [DI]
     JCXZ _pdbs_epilog_          ; Skip if the count is zero
@@ -183,12 +255,12 @@ PARSE_DB_SEQ_:
     JMP ERROR_EXPECTED_BYTE_STRING
 _pdbs_bytes_:
     MOV AL, [ARG1 + ARG_BYTE]
-    CALL EMIT_BYTE_                 ; Emit bytes
+    CALL EMIT_BYTE                  ; Emit bytes
     LOOP _pdbs_bytes_               ; Until CX is zero
     JMP _pdbs_epilog_
 _pdbs_string_:
     MOV SI, ARG1 + ARG_STRLEN
-    CALL EMIT_STRING_               ; Emit strings
+    CALL EMIT_STRING                ; Emit strings
     LOOP _pdbs_string_              ; Until CX is zero
     ; fall through to _pdbs_epilog_
 _pdbs_epilog_:
@@ -210,6 +282,7 @@ _pdbs_nocomma_:
 ;   AX, BX, CX, DX, SI, DI, flags
 PARSE_DW_SEQ_:
     MOV DI, ARG1
+    CALL CLEAR_ARGUMENT_
     CALL PARSE_ARGUMENT_        ; Saves the argument in [DI]
     CALL PARSE_DUP_             ; Puts count in CX, argument in [DI]
     JCXZ _pdws_epilog_          ; Skip if the count is zero
@@ -223,7 +296,7 @@ _pdws_error_:
     JMP ERROR_EXPECTED_WORD
 _pdws_nums_:
     MOV AX, WORD PTR [ARG1 + ARG_WORD]
-    CALL EMIT_WORD_             ; Emit words
+    CALL EMIT_WORD              ; Emit words
     LOOP _pdws_nums_            ; Until CX is zero
     JMP _pdws_epilog_
 _pdws_string_:
@@ -231,7 +304,7 @@ _pdws_string_:
     JNZ _pdws_error_            ; Check that the string has length 2
 _pdws_string_loop_:
     MOV SI, ARG1 + ARG_STRLEN
-    CALL EMIT_STRING_           ; Emit strings
+    CALL EMIT_STRING            ; Emit strings
     LOOP _pdws_string_loop_     ; Until CX is zero
     ; fall through to _pdws_epilog_
 _pdws_epilog_:
@@ -253,6 +326,7 @@ _pdws_nocomma_:
 ;   AX, BX, CX, DX, SI, DI, flags
 PARSE_DD_SEQ_:
     MOV DI, ARG1
+    CALL CLEAR_ARGUMENT_
     CALL PARSE_ARGUMENT_        ; Saves the argument in [DI]
     CALL PARSE_DUP_             ; Puts count in CX, argument in [DI]
     JCXZ _pdds_epilog_          ; Skip if the count is zero
@@ -266,7 +340,7 @@ _pdds_error_:
 _pdds_dwords_:
     MOV AX, WORD PTR [ARG1 + ARG_DWORD]
     MOV DX, WORD PTR [ARG1 + ARG_DWORD + 2]
-    CALL EMIT_DWORD_                 ; Emit dword
+    CALL EMIT_DWORD                  ; Emit dword
     LOOP _pdds_dwords_               ; Until CX is zero
     JMP _pdds_epilog_
 _pdds_string_:
@@ -274,7 +348,7 @@ _pdds_string_:
     JNZ _pdds_error_            ; Check that the string has length 4
 _pdds_string_loop_:
     MOV SI, ARG1 + ARG_STRLEN
-    CALL EMIT_STRING_           ; Emit strings
+    CALL EMIT_STRING            ; Emit strings
     LOOP _pdds_string_loop_     ; Until CX is zero
     ; fall through to _pdds_epilog_
 _pdds_epilog_:
@@ -321,6 +395,7 @@ _pdup_loop_:
     JNZ _pdup_left_
     CALL LEXER_NEXT             ; Get the next token
     MOV DI, ARG1
+    CALL CLEAR_ARGUMENT_
     CALL PARSE_ARGUMENT_        ; Parse the argument
     POP BX
     JMP _pdup_loop_             ; ... and check for DUP again
@@ -456,19 +531,30 @@ _pnumexp_op_:
     POP AX
     JMP _pnumexp_loop_
 
+; Procedure CLEAR_ARGUMENT_
+; Clears the space for an argument
+; Inputs:
+;   DI the location of the argument's buffer
+CLEAR_ARGUMENT_:
+    PUSH AX
+    PUSH CX
+    PUSH DI
+    XOR AL, AL
+    MOV CX, ARG_MAXSIZE
+    CLD
+    REP STOSB
+    POP DI
+    POP CX
+    POP AX
+    RET
+
 ; Procedure PARSE_ARGUMENT_
 ; Parses an argument of any type
 ; Inputs:
 ;   DI the location of the buffer to store the argument in
 ; Destroys:
-;   AX, BX, CX, DX, SI, DI, flags
+;   AX, BX, CX, DX, SI, flags
 PARSE_ARGUMENT_:
-    PUSH DI             ; Clear the argument
-    XOR AL, AL
-    MOV CX, ARG_MAXSIZE
-    REP STOSB
-    POP DI
-
     LD_TOKEN_TYPE
     CMP AL, TK_STRING   ; Tokens above TK_STRING get remapped to EOF
     JBE _parg_ok_
@@ -494,7 +580,7 @@ _parg_table_    DW 2 DUP (ERROR_EXPECTED_ARG)
 ; Inputs:
 ;   DI the location of the buffer to store the argument in
 ; Destroys:
-;   AX, BX, CX, DX, SI, DI, flags
+;   AX, BX, CX, DX, SI, flags
 PARSE_NUMBER_ARG_:
     XOR AX, AX              ; Value in DL:AX
     XOR DX, DX
@@ -557,7 +643,7 @@ _pnumarg_underflow_:
 ; Inputs:
 ;   DI the location of the buffer to store the argument in
 ; Destroys:
-;   AX, BX, CX, DX, SI, DI, flags
+;   AX, BX, CX, DX, SI, flags
 PARSE_STRING_ARG_:
     CMP_TOKEN_VALUE 1  ; Is the length 1?
     JZ _pstrarg_byte_   ; Yes, so return a byte argument
@@ -571,51 +657,60 @@ PARSE_STRING_ARG_:
     REP MOVSB           ; Copy the string from the token to the arg
     POP DI
     MOV BYTE PTR [DI + ARG_TYPE], ARGT_STR  ; Set the type
-    JMP LEXER_NEXT
+    JMP SHORT _pstrarg_ret_
 _pstrarg_byte_:
     MOV AL, BYTE PTR [TOKEN + TOKEN_STR]
     XOR AH, AH
     MOV BYTE PTR [DI + ARG_TYPE], ARGT_NUM + ARGS_BYTE  ; Set the type
     MOV WORD PTR [DI + ARG_WORD], AX        ; Copy the value
-    JMP LEXER_NEXT
+_pstrarg_ret_:
+    PUSH DI
+    CALL LEXER_NEXT
+    POP DI
+    RET
 
 ; Procedure PARSE_REGISTER_ARG_
 ; Parses an argument containing a register
 ; Inputs:
 ;   DI the location of the buffer to store the argument in
 ; Destroys:
-;   AX, BX, CX, DX, SI, DI, flags
+;   AX, BX, CX, DX, SI, flags
 PARSE_REGISTER_ARG_:
     LD_TOKEN_VALUE
     CMP AL, REG_AL      ; AX and AL map to the same values
     JAE _pregarg_8bit_  ; so we have to jump appropriately
     MOV BYTE PTR [DI + ARG_TYPE], ARGT_REG + ARGS_WORD
     MOV BYTE PTR [DI + ARG_REGISTER], AL
-    JMP LEXER_NEXT
+    JMP SHORT _pregarg_ret_
 _pregarg_8bit_:
     SUB AL, REG_AL
     MOV BYTE PTR [DI + ARG_TYPE], ARGT_REG + ARGS_BYTE
     MOV BYTE PTR [DI + ARG_REGISTER], AL
-    JMP LEXER_NEXT
+_pregarg_ret_:
+    PUSH DI
+    CALL LEXER_NEXT
+    POP DI
+    RET
 
 ; Procedure PARSE_SEGMENT_ARG_
 ; Parses an argument containing a segment
 ; Inputs:
 ;   DI the location of the buffer to store the argument in
 ; Destroys:
-;   AX, BX, CX, DX, SI, DI, flags
+;   AX, BX, CX, DX, SI, flags
 PARSE_SEGMENT_ARG_:
     LD_TOKEN_VALUE
     MOV BYTE PTR [DI + ARG_SEGMENT], AL
     PUSH DI
     CALL LEXER_NEXT
-    POP DI
     CMP_TOKEN_TYPE TK_COLON
     JZ _psegarg_ptr_
+    POP DI
     MOV BYTE PTR [DI + ARG_TYPE], ARGT_SEG
     RET
 _psegarg_ptr_:
     CALL LEXER_NEXT
+    POP DI
     CMP_TOKEN_TYPE TK_LBRACKET
     JNZ _psegarg_bracket_
     MOV BYTE PTR [DI + ARG_EAMODE], EA_SEGMENT
@@ -628,10 +723,12 @@ _psegarg_bracket_:
 ; Inputs:
 ;   DI the location of the buffer to store the argument in
 ; Destroys:
-;   AX, BX, CX, DX, SI, DI, flags
+;   AX, BX, CX, DX, SI, flags
 PARSE_BARE_PTR_ARG_:
     ; Parse the EA mode
+    PUSH DI
     CALL LEXER_NEXT
+    POP DI
     XOR CX, CX          ; CH=BX/BP CL=SI/DI
     XOR AX, AX
     PUSH AX
@@ -784,18 +881,132 @@ _pbpa_nooffset_:
     MOV AL, ARGT_PTR
 _pbpa_setsize_:
     MOV BYTE PTR [DI + ARG_TYPE], AL
-    JMP LEXER_NEXT
+    PUSH DI
+    CALL LEXER_NEXT
+    POP DI
+    RET
 _pbpa_eatable_  DB EA_DIRECT, EA_SI, EA_DI
                 DB EA_BX, EA_BXSI, EA_BXDI
                 DB EA_BP + EA_OFFSET, EA_BPSI, EA_BPDI
 
-
-; Stubs
-PARSE_STATEMENT_:
+; Procedure PARSE_KEYWORD_ARG_
+; Parses a keyword argument
+; Inputs:
+;   DI the location of the buffer to store the argument in
+; Destroys:
+;   AX, BX, CX, DX, SI, flags
 PARSE_KEYWORD_ARG_:
-EMIT_ORG_:
-EMIT_BYTE_:
-EMIT_WORD_:
-EMIT_DWORD_:
-EMIT_STRING_:
+    LD_TOKEN_VALUE
+    MOV AH, ARGS_BYTE
+    CMP AL, KW_BYTE
+    JZ _pkwarg_size_
+    MOV AH, ARGS_WORD
+    CMP AL, KW_WORD
+    JZ _pkwarg_size_
+    MOV AH, ARGS_DWORD
+    CMP AL, KW_DWORD
+    JZ _pkwarg_size_
+    MOV AH, DST_SHORT
+    CMP AL, KW_SHORT
+    JZ _pkwarg_distance_
+    MOV AH, DST_NEAR
+    CMP AL, KW_NEAR
+    JZ _pkwarg_distance_
+    MOV AH, DST_FAR
+    CMP AL, KW_FAR
+    JZ _pkwarg_distance_
+    JMP ERROR_EXPECTED_SIZE_DISTANCE
+_pkwarg_size_:
+    PUSH AX
+    PUSH DI
+    CALL LEXER_NEXT
+    CMP_TOKEN_TYPE TK_KEYWORD
+    JNZ _pkwarg_noptr_
+    CMP_TOKEN_VALUE KW_PTR
+    JNZ _pkwarg_noptr_
+    CALL LEXER_NEXT
+    POP DI
+    CALL PARSE_PTR_ARG_
+    POP AX
+    MOV AL, BYTE PTR [DI + ARG_TYPE]
+    AND AL, ARGT_MASK
+    OR AL, AH
+    MOV BYTE PTR [DI + ARG_TYPE], AL
     RET
+_pkwarg_noptr_:
+    JMP ERROR_EXPECTED_PTR
+_pkwarg_distance_:
+    CMP BYTE PTR [DI + ARG_DISTANCE], 0
+    JZ _pkwarg_distance_ok_
+    JMP ERROR_UNEXPECTED_DISTANCE
+_pkwarg_distance_ok_:
+    MOV [DI + ARG_DISTANCE], AH
+    PUSH DI
+    CALL LEXER_NEXT
+    POP DI
+    CALL PARSE_ARGUMENT_
+    MOV AL, BYTE PTR [DI + ARG_TYPE]
+    MOV AH, BYTE PTR [DI + ARG_DISTANCE]
+    CMP AH, DST_SHORT
+    JNZ _pkwarg_maybe_near_
+    CMP AL, ARGT_NUM + ARGS_BYTE
+    JZ _pkwarg_distance_ret_
+    CMP AL, ARGT_NUM + ARGS_WORD
+    JZ _pkwarg_distance_ret_
+    JMP ERROR_INVALID_SHORT_TARGET
+_pkwarg_maybe_near_:
+    CMP AH, DST_NEAR
+    JNZ _pkwarg_far_
+    CMP AL, ARGT_PTR
+    JNZ _pkwarg_maybe_near_size_
+    OR AL, ARGS_WORD
+    MOV BYTE PTR [DI + ARG_TYPE], AL
+    JMP _pkwarg_distance_ret_
+_pkwarg_maybe_near_size_:
+    TEST AL, ARGS_BYTE
+    JNZ _pkwarg_distance_ret_
+    TEST AL, ARGS_WORD
+    JNZ _pkwarg_distance_ret_
+    JMP ERROR_INVALID_NEAR_TARGET
+_pkwarg_far_:
+    CMP AL, ARGT_PTR
+    JNZ _pkwarg_maybe_far_size_
+    OR AL, ARGS_DWORD
+    MOV BYTE PTR [DI + ARG_TYPE], AL
+    JMP _pkwarg_distance_ret_
+_pkwarg_maybe_far_size_:
+    TEST AL, ARGS_DWORD
+    JNZ _pkwarg_distance_ret_
+    JMP ERROR_INVALID_FAR_TARGET
+_pkwarg_distance_ret_:
+    RET
+
+; Procedure PARSE_PTR_ARG_
+; Parses a pointer argument
+; Inputs:
+;   DI the location of the buffer to store the argument in
+; Destroys:
+;   AX, BX, CX, DX, SI, flags
+PARSE_PTR_ARG_:
+    CMP_TOKEN_TYPE TK_SEGMENT
+    JNZ _pptrarg_noseg_
+    MOV AL, BYTE PTR [TOKEN + TOKEN_SEGMENT]
+    MOV BYTE PTR [DI + ARG_SEGMENT], AL
+    MOV AL, BYTE PTR [DI + ARG_EAMODE]
+    OR AL, EA_SEGMENT
+    MOV BYTE PTR [DI + ARG_EAMODE], AL
+    PUSH DI
+    CALL LEXER_NEXT
+    CMP_TOKEN_TYPE TK_COLON
+    JZ _pptrarg_colon_
+    JMP ERROR_EXPECTED_COLON
+_pptrarg_colon_:
+    CALL LEXER_NEXT
+    POP DI
+_pptrarg_noseg_:
+    CMP_TOKEN_TYPE TK_LBRACKET
+    JZ _pptrarg_lbracket_
+    JMP ERROR_EXPECTED_LBRACKET
+_pptrarg_lbracket_:
+    JMP PARSE_BARE_PTR_ARG_
+
