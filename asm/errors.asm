@@ -1,161 +1,171 @@
 ERROR_FILE_OPEN_READ:
-    MOV DX, error_file_open_read_msg
+    MOV DX, _em_file_open_read
     JMP PRINT_ERROR
-error_file_open_read_msg    DB 'Error opening file for read$'
+_em_file_open_read    DB 'Error opening file for read$'
 
 ERROR_SEEK:
-    MOV DX, error_seek_msg
+    MOV DX, _em_seek
     JMP PRINT_ERROR
-error_seek_msg DB 'Seek error$'
+_em_seek DB 'Seek error$'
 
 ERROR_READ:
-    MOV DX, error_read_msg
+    MOV DX, _em_read
     JMP PRINT_ERROR
-error_read_msg DB 'Read error$'
+_em_read DB 'Read error$'
 
 ERROR_INVALID_CHAR:
     MOV AL, [LX_RAWC]
-    MOV [error_invalid_char_chr], AL
-    MOV DX, error_invalid_char_msg
+    MOV [_em_invalid_char_chr], AL
+    MOV DX, _em_invalid_char
     JMP PRINT_ERROR_LINE
-error_invalid_char_msg  DB 'Invalid character ',39
-error_invalid_char_chr  DB 0
+_em_invalid_char  DB 'Invalid character ',39
+_em_invalid_char_chr  DB 0
                         DB 39,'$'
 
 ERROR_UNEXPECTED_EOF:
-    MOV DX, error_unexpected_eof_msg
+    MOV DX, _eum_eof
     JMP PRINT_ERROR_LINE
-error_unexpected_eof_msg DB 'Unexpected end of file$'
+_eum_eof DB 'Unexpected end of file$'
 
 ERROR_UNEXPECTED_EOL:
-    MOV DX, error_unexpected_eol_msg
+    MOV DX, _eum_eol
     JMP PRINT_ERROR_LINE
-error_unexpected_eol_msg DB 'Unexpected end of line$'
+_eum_eol DB 'Unexpected end of line$'
 
 ERROR_STRING_TOO_LONG:
-    MOV DX, error_string_too_long_msg
+    MOV DX, _em_string_too_long
     JMP PRINT_ERROR_LINE
-error_string_too_long_msg DB 'String too long$'
+_em_string_too_long DB 'String too long$'
 
 ERROR_IDENTIFIER_TOO_LONG:
-    MOV DX, error_identifier_too_long_msg
+    MOV DX, _em_identifier_too_long
     JMP PRINT_ERROR_LINE
-error_identifier_too_long_msg DB 'Identifier too long$'
+_em_identifier_too_long DB 'Identifier too long$'
 
 ERROR_NUMBER_TOO_LARGE:
-    MOV DX, error_number_too_large_msg
+    MOV DX, _em_number_too_large
     JMP PRINT_ERROR_LINE
-error_number_too_large_msg DB 'Number too large$'
+_em_number_too_large DB 'Number too large$'
 
 ERROR_INVALID_DIGIT:
-    MOV DX, error_invalid_digit_msg
+    MOV DX, _em_invalid_digit
     JMP PRINT_ERROR_LINE
-error_invalid_digit_msg DB 'Invalid digit$'
+_em_invalid_digit DB 'Invalid digit$'
 
 ERROR_MEMORY:
-    MOV DX, error_memory_msg
+    MOV DX, _em_memory
     JMP PRINT_ERROR
-error_memory_msg DB 'Not enough memory$'
+_em_memory DB 'Not enough memory$'
 
 ERROR_DUPLICATE_LABEL:
-    MOV DX, error_duplicate_label_msg
+    MOV DX, _em_duplicate_label
     JMP PRINT_ERROR_LINE
-error_duplicate_label_msg DB 'Duplicate label$'
+_em_duplicate_label DB 'Duplicate label$'
 
 ERROR_LABEL_NOT_FOUND:
-    MOV DX, error_label_not_found_msg
+    MOV DX, _em_label_not_found
     JMP PRINT_ERROR_LINE
-error_label_not_found_msg DB 'Unknown label$'
+_em_label_not_found DB 'Unknown label$'
 
 ERROR_LABEL_CHANGED_ADDR:
-    MOV DX, error_label_changed_addr_msg
+    MOV DX, _em_label_changed_addr
     JMP PRINT_ERROR_LINE
-error_label_changed_addr_msg DB 'Internal error: label changed address between passes$'
+_em_label_changed_addr DB 'Internal error: label changed address between passes$'
 
 ERROR_EXPECTED_EOL:
-    MOV DX, error_expected_eol_msg
+    MOV DX, _eem_eol
     JMP PRINT_ERROR_LINE
-error_expected_eol_msg DB 'Expected an end of line$'
+_eem_eol DB 'Expected an end of line$'
 
 ERROR_EXPECTED_LABEL_KEYWORD:
-    MOV DX, error_expected_label_kw_msg
+    MOV DX, _eem_label_kw
     JMP PRINT_ERROR_LINE
-error_expected_label_kw_msg DB 'Expected a label or keyword$'
+_eem_label_kw DB 'Expected a label or keyword$'
 
 ERROR_EXPECTED_AFTER_LABEL:
-    MOV DX, error_expected_after_lbl_msg
+    MOV DX, _eem_after_lbl
     JMP PRINT_ERROR_LINE
-error_expected_after_lbl_msg DB 'Expected a colon, DB, DW, DD, or EQU$'
+_eem_after_lbl DB 'Expected a colon, DB, DW, DD, or EQU$'
 
 ERROR_EXPECTED_KEYWORD:
-    MOV DX, error_expected_kw_msg
+    MOV DX, _eem_kw
     JMP PRINT_ERROR_LINE
-error_expected_kw_msg DB 'Expected a keyword$'
+_eem_kw DB 'Expected a keyword$'
 
 ERROR_EXPECTED_NUMBER:
-    MOV DX, error_expected_num_msg
+    MOV DX, _eem_num
     JMP PRINT_ERROR_LINE
-error_expected_num_msg DB 'Expected a number$'
+_eem_num DB 'Expected a number$'
 
 ERROR_EXPECTED_NUMBER_LABEL:
-    MOV DX, error_expected_numlbl_msg
+    MOV DX, _eem_numlbl
     JMP PRINT_ERROR_LINE
-error_expected_numlbl_msg DB 'Expected a number or label$'
+_eem_numlbl DB 'Expected a number or label$'
 
 ERROR_EXPECTED_BYTE_STRING:
-    MOV DX, error_expected_byte_str_msg
+    MOV DX, _eem_byte_str
     JMP PRINT_ERROR_LINE
-error_expected_byte_str_msg DB 'Expected a byte or a string$'
+_eem_byte_str DB 'Expected a byte or a string$'
 
 ERROR_EXPECTED_WORD:
-    MOV DX, error_expected_word_msg
+    MOV DX, _eem_word
     JMP PRINT_ERROR_LINE
-error_expected_word_msg DB 'Expected a word$'
+_eem_word DB 'Expected a word$'
 
 ERROR_EXPECTED_DWORD:
-    MOV DX, error_expected_dword_msg
+    MOV DX, _eem_dword
     JMP PRINT_ERROR_LINE
-error_expected_dword_msg DB 'Expected a doubleword$'
+_eem_dword DB 'Expected a doubleword$'
 
 ERROR_EXPECTED_COMMA:
-    MOV DX, error_expected_comma_msg
+    MOV DX, _eem_comma
     JMP PRINT_ERROR_LINE
-error_expected_comma_msg DB 'Expected a comma$'
+_eem_comma DB 'Expected a comma$'
 
 ERROR_EXPECTED_LPAREN:
-    MOV DX, error_expected_lparen_msg
+    MOV DX, _eem_lparen
     JMP PRINT_ERROR_LINE
-error_expected_lparen_msg DB 'Expected a left parenthesis$'
+_eem_lparen DB 'Expected a left parenthesis$'
 
 ERROR_EXPECTED_RPAREN:
-    MOV DX, error_expected_rparen_msg
+    MOV DX, _eem_rparen
     JMP PRINT_ERROR_LINE
-error_expected_rparen_msg DB 'Expected a right parenthesis$'
+_eem_rparen DB 'Expected a right parenthesis$'
 
 ERROR_EXPECTED_LBRACKET:
-    MOV DX, error_expected_lbracket_msg
+    MOV DX, _eem_lbracket
     JMP PRINT_ERROR_LINE
-error_expected_lbracket_msg DB 'Expected a left bracket$'
+_eem_lbracket DB 'Expected a left bracket$'
 
 ERROR_EXPECTED_ARG:
-    MOV DX, error_expected_arg_msg
+    MOV DX, _eem_arg
     JMP PRINT_ERROR_LINE
-error_expected_arg_msg DB 'Expected an argument$'
+_eem_arg DB 'Expected an argument$'
 
 ERROR_EXPECTED_EA_PART:
-    MOV DX, error_expected_eapart_msg
+    MOV DX, _eem_eapart
     JMP PRINT_ERROR_LINE
-error_expected_eapart_msg DB 'Expected BX, BP, SI, DI, or an offset$'
+_eem_eapart DB 'Expected BX, BP, SI, DI, or an offset$'
+
+ERROR_EXPECTED_EA_ONE_REG:
+    MOV DX, _eem_eaonereg
+    JMP PRINT_ERROR_LINE
+_eem_eaonereg DB 'Expected only one BX, BP, SI or DI$'
+
+ERROR_EXPECTED_EA_END:
+    MOV DX, _eem_eaend
+    JMP PRINT_ERROR_LINE
+_eem_eaend DB 'Expected a right bracket or arithmetic operator$'
 
 ERROR_OVERFLOW:
-    MOV DX, error_overflow_msg
+    MOV DX, _em_overflow_msg
     JMP PRINT_ERROR_LINE
-error_overflow_msg DB 'Overflow$'
+_em_overflow_msg DB 'Overflow$'
 
 ERROR_UNDERFLOW:
-    MOV DX, error_underflow_msg
+    MOV DX, _em_underflow_msg
     JMP PRINT_ERROR_LINE
-error_underflow_msg DB 'Underflow$'
+_em_underflow_msg DB 'Underflow$'
 
 ; Procedure PRINT_ERROR_LINE
 ; Displays an error message with a line number and exits.

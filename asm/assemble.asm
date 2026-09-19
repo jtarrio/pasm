@@ -623,9 +623,175 @@ _psegarg_ptr_:
 _psegarg_bracket_:
     JMP ERROR_EXPECTED_LBRACKET
 
+; Procedure PARSE_BARE_PTR_ARG_
+; Parses a pointer
+; Inputs:
+;   DI the location of the buffer to store the argument in
+; Destroys:
+;   AX, BX, CX, DX, SI, DI, flags
+PARSE_BARE_PTR_ARG_:
+    ; Parse the EA mode
+    CALL LEXER_NEXT
+    XOR CX, CX          ; CH=BX/BP CL=SI/DI
+    XOR AX, AX
+    PUSH AX
+    PUSH AX             ; Save DL:AX and DH in the stack
+_pbpa_loop_:            ; Parse the part in brackets
+    LD_TOKEN_TYPE
+    CMP AL, TK_REGISTER     ; Register?
+    JZ _pbpa_register_
+    CMP AL, TK_PLUS         ; Plus,
+    JZ _pbpa_offset_
+    CMP AL, TK_MINUS        ; minus,
+    JZ _pbpa_offset_
+    CMP AL, TK_NUMBER       ; number,
+    JZ _pbpa_offset_
+    CMP AL, TK_IDENTIFIER   ; identifier?
+    JZ _pbpa_offset_
+    JMP ERROR_EXPECTED_EA_PART
+_pbpa_parse_token_:
+    LD_TOKEN_TYPE
+    CMP AL, TK_RBRACKET     ; left bracket?
+    JZ _pbpa_loop_break_
+    CMP AL, TK_PLUS         ; plus sign?
+    JZ _pbpa_plus_
+    CMP AL, TK_MINUS        ; minus sign?
+    JZ _pbpa_loop_
+    JMP ERROR_EXPECTED_EA_END
+_pbpa_register_:
+    LD_TOKEN_VALUE
+    CMP AL, REG_BX
+    JZ _pbpa_reg_bx_
+    CMP AL, REG_BP
+    JZ _pbpa_reg_bp_
+    CMP AL, REG_SI
+    JZ _pbpa_reg_si_
+    CMP AL, REG_DI
+    JZ _pbpa_reg_di_
+    JMP ERROR_EXPECTED_EA_PART
+_pbpa_reg_bx_:
+    CMP CH, 0
+    JNZ _pbpa_bad_reg_      ; only allow one BX
+    MOV CH, 1
+    JMP _pbpa_next_token_
+_pbpa_reg_bp_:
+    CMP CH, 0
+    JNZ _pbpa_bad_reg_      ; only allow one BP
+    MOV CH, 2
+    JMP _pbpa_next_token_
+_pbpa_reg_si_:
+    CMP CL, 0
+    JNZ _pbpa_bad_reg_      ; only allow one SI
+    MOV CL, 1
+    JMP _pbpa_next_token_
+_pbpa_reg_di_:
+    CMP CL, 0
+    JNZ _pbpa_bad_reg_      ; only allow one DI
+    MOV CL, 2
+    JMP _pbpa_next_token_
+_pbpa_bad_reg_:
+    JMP ERROR_EXPECTED_EA_ONE_REG
+_pbpa_next_token_:
+    PUSH CX
+    PUSH DI
+    CALL LEXER_NEXT
+    POP DI
+    POP CX
+    JMP _pbpa_parse_token_
+_pbpa_offset_:
+    PUSH CX
+    PUSH DI
+    CALL PARSE_SINGLE_NUMBER_
+    POP DI
+    POP CX
+    POP BX                  ; Add the parsed number
+    ADD AX, BX
+    POP BX
+    CMP BH, LBL_NONE
+    JZ _pbpa_noset_label_
+    MOV DH, BH
+_pbpa_noset_label_:
+    PUSH DX
+    PUSH AX
+    JMP _pbpa_parse_token_
+_pbpa_plus_:
+    PUSH CX
+    PUSH DI
+    CALL LEXER_NEXT
+    POP DI
+    POP CX
+    JMP _pbpa_loop_
+
+_pbpa_loop_break_:          ; Done parsing; now make sense of it
+    ; Remove redundant segment override
+    MOV AH, BYTE PTR [DI + ARG_EAMODE]
+    TEST AH, EA_SEGMENT
+    JZ _pbpa_noseg_
+    MOV AL, BYTE PTR [DI + ARG_SEGMENT]
+    CMP CH, 2
+    JZ _pbpa_seg_bp_        ; BP? then remove redundant SS
+    CMP AL, ASEG_DS         ; And for BX, remove redundant DS
+    JNZ _pbpa_noseg_
+    JMP _pbpa_rmseg_
+_pbpa_seg_bp_:
+    CMP AL, ASEG_SS
+    JNZ _pbpa_noseg_
+_pbpa_rmseg_:
+    AND AH, EA_NOSEGMENT
+    MOV BYTE PTR [DI + ARG_EAMODE], AH
+_pbpa_noseg_:
+
+    ; Set the offset and offset flags
+    XOR AX, AX
+    MOV AH, BYTE PTR [DI + ARG_EAMODE]
+    MOV AL, CH
+    ADD AL, CH
+    ADD AL, CH
+    ADD AL, CL      ; AL = (BXBP * 3) + DISI, AH = EA mode
+    POP CX
+    POP DX          ; CX = offset, DH = label type
+    CMP AL, 0       ; If only offset, set the offset
+    JZ _pbpa_setoffset_
+    CMP DH, LBL_NONE    ; If there is a label, flag the label
+    JNZ _pbpa_flagoffset16_
+    CMP CX, 0       ; If offset is not zero, flag the offset
+    JNZ _pbpa_flagoffset_
+    JMP _pbpa_nooffset_
+_pbpa_flagoffset16_:
+    OR AH, EA_OFFSET16
+_pbpa_flagoffset_:
+    OR AH, EA_OFFSET
+_pbpa_setoffset_:
+    MOV WORD PTR [DI + ARG_OFFSET], CX
+_pbpa_nooffset_:
+
+    ; Set the EA mode bytes
+    MOV BX, _pbpa_eatable_
+    XLAT            ; AL now has the entry from _pbpa_eatable_
+    OR AH, AL
+    MOV BYTE PTR [DI + ARG_EAMODE], AH
+
+    ; Set the size
+    MOV AL, ARGT_PTR + ARGS_BYTE
+    CMP DH, LBL_BYTEADDR            ; Byte?
+    JZ _pbpa_setsize_
+    MOV AL, ARGT_PTR + ARGS_WORD
+    CMP DH, LBL_WORDADDR            ; Word?
+    JZ _pbpa_setsize_
+    MOV AL, ARGT_PTR + ARGS_DWORD
+    CMP DH, LBL_DWORDADDR           ; Dword?
+    JZ _pbpa_setsize_
+    MOV AL, ARGT_PTR
+_pbpa_setsize_:
+    MOV BYTE PTR [DI + ARG_TYPE], AL
+    JMP LEXER_NEXT
+_pbpa_eatable_  DB EA_DIRECT, EA_SI, EA_DI
+                DB EA_BX, EA_BXSI, EA_BXDI
+                DB EA_BP + EA_OFFSET, EA_BPSI, EA_BPDI
+
+
 ; Stubs
 PARSE_STATEMENT_:
-PARSE_BARE_PTR_ARG_:
 PARSE_KEYWORD_ARG_:
 EMIT_ORG_:
 EMIT_BYTE_:
