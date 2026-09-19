@@ -232,9 +232,6 @@ func (a *assembler) parseStatement() error {
 	if err := a.parseArgument(&arg2); err != nil {
 		return err
 	}
-	if err := a.expect(parse.EOL, "expected end of line"); err != nil {
-		return err
-	}
 	return a.emitInstruction(kw, &arg1, &arg2)
 }
 

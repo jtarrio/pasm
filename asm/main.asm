@@ -48,8 +48,7 @@ _pl_ok_:
     MOV BYTE PTR ES:[0 + LABEL_TYPE], LBL_NONE
     ADD AX, 1000h       ; Next segment
     MOV [MACROSEG], AX  ; store it in MACROSEG
-    MOV ES, AX
-    MOV BYTE PTR ES:[0 + MACRO_TYPE], MAC_NONE
+    CALL RESET_MACROS
     POPF
     POP ES
     POP BX

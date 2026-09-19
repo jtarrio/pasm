@@ -7,6 +7,7 @@ cat \
   asm/lexer.asm \
   asm/labels.asm \
   asm/macros.asm \
+  asm/argument.asm \
   asm/assemble.asm \
   asm/util.asm \
   asm/main.asm \

@@ -11,6 +11,18 @@ MAC_EQU     EQU 1   ; EQU
 
 MACROSEG    DW 0    ; The segment where macros are saved
 
+; Procedure RESET_MACROS
+; Marks the macros segment as empty.
+RESET_MACROS:
+    PUSH AX
+    PUSH ES
+    MOV AX, [MACROSEG]
+    MOV ES, AX
+    MOV BYTE PTR ES:[0 + MACRO_TYPE], MAC_NONE
+    POP ES
+    POP AX
+    RET
+
 ; Procedure START_EQU
 ; Starts an empty EQU definition.
 ; Inputs:
