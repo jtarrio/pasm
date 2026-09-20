@@ -46,7 +46,7 @@ START_EQU:
 _se_add_:
     POP SI
     POP DS
-    MOV ES:[DI + MACRO_TYPE], MAC_EQU   ; Set the macro type
+    MOV BYTE PTR ES:[DI + MACRO_TYPE], MAC_EQU   ; Set the macro type
     XOR CX, CX                  ; How many chars in the name?
     MOV CL, DS:[SI]
     INC CX
@@ -160,7 +160,7 @@ FIND_EQU_:
     XOR DI, DI          ; Start at the first position
     CLD
 _fe_loop_:
-    CMP ES:[DI + MACRO_TYPE], MAC_NONE
+    CMP BYTE PTR ES:[DI + MACRO_TYPE], MAC_NONE
     JZ _fe_notfound_
     XOR CX, CX
     MOV CL, ES:[DI + MACRO_NAMELEN]

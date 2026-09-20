@@ -1,6 +1,4 @@
-OUTPUT  DW 0    ; Assembler output handle
 PASS    DB 0    ; Assembler pass
-PC      DW 0    ; Program counter
 ARG1    DB ARG_MAXSIZE DUP(0)   ; First argument
 ARG2    DB ARG_MAXSIZE DUP(0)   ; Second argument
 
@@ -10,7 +8,7 @@ ARG2    DB ARG_MAXSIZE DUP(0)   ; Second argument
 ;   AX, BX, CX, DX, SI, DI, flags
 ASSEMBLE:
     INC [PASS]          ; Start a new pass
-    MOV [PC], 0         ; Reset the program counter
+    MOV WORD PTR [PC], 0; Reset the program counter
     CALL LEXER_RESTART  ; Reset the lexer
     CALL RESET_MACROS   ; Reset the macro table for the pass
     JMP PARSE_SOURCE_   ; Start parsing

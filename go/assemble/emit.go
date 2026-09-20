@@ -751,6 +751,9 @@ func expect2Arg(a *assembler, a2 *argument) error {
 }
 
 func equateSizes(a1, a2 *argument) {
+	if a1.IsNoSize() && a2.IsNum() {
+		return
+	}
 	if a1.IsByte() && a2.IsNoSize() {
 		a2.argType = a2.argType.WithSize(sizeByte)
 	} else if a1.IsWord() && a2.IsNoSize() {

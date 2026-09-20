@@ -208,7 +208,7 @@ _lrs_toolong_:
 ;   [TOKEN] the token
 ; Destroys:
 LEXER_READNUMBER_:
-    MOV [_lrnum_numdigits_], 0
+    MOV BYTE PTR [_lrnum_numdigits_], 0
 _lrnum_skipzeros_:      ; Skip leading zeros
     CMP [LX_EOF], 0     ; If EOF, exit
     JNZ _lrnum_done_

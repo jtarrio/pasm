@@ -54,7 +54,7 @@ _al_ret_:
     POP AX
     RET
 _al_exists_:
-    CMP CS:[PASS], 2    ; Is this the second pass?
+    CMP BYTE PTR CS:[PASS], 2    ; Is this the second pass?
     JZ _al_exists_pass2_
     JMP ERROR_DUPLICATE_LABEL
 _al_exists_pass2_:
@@ -92,7 +92,7 @@ _gl_ret_:
     POP AX
     RET
 _gl_notfound_:
-    CMP CS:[PASS], 1    ; Is this the first pass?
+    CMP BYTE PTR CS:[PASS], 1    ; Is this the first pass?
     JZ _gl_notfound_pass1_
     JMP ERROR_LABEL_NOT_FOUND
 _gl_notfound_pass1_:

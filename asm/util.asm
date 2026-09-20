@@ -3,32 +3,44 @@
 ; Inputs:
 ;   AX the number to print
 PRINT_UINT16_DEC:
-    PUSH AX
     PUSH BX
+    MOV BX, 10
+    CALL PRINT_UINT16
+    POP BX
+    RET
+
+; Procedure PRINT_UINT16
+; Prints out a 16-bit unsigned number in any base
+; Inputs:
+;   AX the number to print
+;   BX the base
+PRINT_UINT16:
+    PUSH AX
     PUSH CX
     PUSH DX
 
     XOR CX, CX  ; Number of digits = 0
-    MOV BX, 10  ; Base 10
-
-_pui16d_div_:
+_pui16_div_:
     XOR DX, DX
     DIV BX      ; AX = DX:AX / BX ; DX = remainder
     PUSH DX     ; Push digit to stack
     INC CX
     OR AX, AX   ; If divisor is 0, done
-    JNZ _pui16d_div_
+    JNZ _pui16_div_
 
     MOV AH, 02h ; Print char
-_pui16d_out_:
+_pui16_out_:
     POP DX      ; Pop digit
+    CMP DL, 9
+    JA _pui16_lo_
+    ADD DL, 27
+_pui16_lo_:
     ADD DL, '0'
     INT 21h     ; Print digit
-    LOOP _pui16d_out_
+    LOOP _pui16_out_
 
     POP DX
     POP CX
-    POP BX
     POP AX
     RET
 

@@ -13,13 +13,18 @@ ERROR_READ:
     JMP PRINT_ERROR
 _em_read DB 'Read error$'
 
+ERROR_WRITE:
+    MOV DX, _em_write
+    JMP PRINT_ERROR
+_em_write DB 'Write error$'
+
 ERROR_INVALID_CHAR:
     MOV AL, [LX_RAWC]
-    MOV [_em_invalid_char_chr], AL
-    MOV DX, _em_invalid_char
+    MOV [_eim_char_chr], AL
+    MOV DX, _eim_char
     JMP PRINT_ERROR_LINE
-_em_invalid_char  DB 'Invalid character ',39
-_em_invalid_char_chr  DB 0
+_eim_char  DB 'Invalid character ',39
+_eim_char_chr  DB 0
                         DB 39,'$'
 
 ERROR_UNEXPECTED_EOF:
@@ -48,9 +53,9 @@ ERROR_NUMBER_TOO_LARGE:
 _em_number_too_large DB 'Number too large$'
 
 ERROR_INVALID_DIGIT:
-    MOV DX, _em_invalid_digit
+    MOV DX, _eim_digit
     JMP PRINT_ERROR_LINE
-_em_invalid_digit DB 'Invalid digit$'
+_eim_digit DB 'Invalid digit$'
 
 ERROR_MEMORY:
     MOV DX, _em_memory
@@ -168,9 +173,14 @@ ERROR_EXPECTED_EA_END:
 _eem_eaend DB 'Expected a right bracket or arithmetic operator$'
 
 ERROR_OVERFLOW:
-    MOV DX, _em_overflow_msg
+    MOV DX, _em_overflow
     JMP PRINT_ERROR_LINE
-_em_overflow_msg DB 'Overflow$'
+_em_overflow DB 'Overflow$'
+
+ERROR_UNDERFLOW:
+    MOV DX, _em_underflow
+    JMP PRINT_ERROR_LINE
+_em_underflow DB 'Underflow$'
 
 ERROR_EXPECTED_SIZE_DISTANCE:
     MOV DX, _eem_size_distance
@@ -188,33 +198,50 @@ ERROR_UNEXPECTED_DISTANCE:
 _eum_distance DB 'Unexpected distance specifier$'
 
 ERROR_INVALID_SHORT_TARGET:
-    MOV DX, _em_invalid_short_target
+    MOV DX, _eim_short_target
     JMP PRINT_ERROR_LINE
-_em_invalid_short_target DB 'Invalid short target$'
+_eim_short_target DB 'Invalid short target$'
 
 ERROR_INVALID_NEAR_TARGET:
-    MOV DX, _em_invalid_near_target
+    MOV DX, _eim_near_target
     JMP PRINT_ERROR_LINE
-_em_invalid_near_target DB 'Invalid near target$'
+_eim_near_target DB 'Invalid near target$'
 
 ERROR_INVALID_FAR_TARGET:
-    MOV DX, _em_invalid_far_target
+    MOV DX, _eim_far_target
     JMP PRINT_ERROR_LINE
-_em_invalid_far_target DB 'Invalid far target$'
+_eim_far_target DB 'Invalid far target$'
 
-ERROR_UNDERFLOW:
-    MOV DX, _em_underflow_msg
+ERROR_ORG_REWIND:
+    MOV DX, _em_org_rewind
     JMP PRINT_ERROR_LINE
-_em_underflow_msg DB 'Underflow$'
+_em_org_rewind DB 'Cannot rewind instruction pointer with ORG$'
+
+ERROR_INVALID_PREFIX:
+    MOV DX, _eim_prefix
+    JMP PRINT_ERROR_LINE_1
+_eim_prefix DB 'Internal error: unexpected prefix $'
 
 ; Procedure PRINT_ERROR_LINE
 ; Displays an error message with a line number and exits.
 ; Inputs:
 ;   DX the error message
 PRINT_ERROR_LINE:
+    CALL PRINT_ERROR_LINE_
+    JMP PRINT_ERROR
+
+; Procedure PRINT_ERROR_LINE_1
+; Displays an error message with a line number and 1 argument and exits.
+; Inputs:
+;   DX the error message
+PRINT_ERROR_LINE_1:
+    CALL PRINT_ERROR_LINE_
+    JMP PRINT_ERROR_1
+
+PRINT_ERROR_LINE_:
     PUSH CS
     POP DS
-    CMP [LINE], 0
+    CMP WORD PTR [LINE], 0
     JZ PRINT_ERROR
     PUSH DX
     MOV AX, [LINE]
@@ -223,7 +250,7 @@ PRINT_ERROR_LINE:
     MOV DX, _pe_colon_
     INT 21h
     POP DX
-    ; fall through to PRINT_ERROR
+    RET
 
 ; Procedure PRINT_ERROR
 ; Displays an error message and exits.
@@ -234,6 +261,26 @@ PRINT_ERROR:
     POP DS
     MOV AH, 09h     ; Print string
     INT 21h
+    MOV DX, _pe_crlf_
+    INT 21h
+    MOV AX, 4C01h   ; Exit with status 1
+    INT 21h
+
+
+; Procedure PRINT_ERROR_1
+; Displays an error message with 1 numeric argument and exits.
+; Inputs:
+;   DX the error message
+;   AX the argument
+PRINT_ERROR_1:
+    PUSH AX
+    PUSH CS
+    POP DS
+    MOV AH, 09h     ; Print string
+    INT 21h
+    POP AX
+    MOV BX, 16
+    CALL PRINT_UINT16
     MOV DX, _pe_crlf_
     INT 21h
     MOV AX, 4C01h   ; Exit with status 1
