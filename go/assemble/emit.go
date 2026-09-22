@@ -132,22 +132,22 @@ func (a *assembler) emitRm(opcode byte, ext byte, arg *argument, rest ...byte) e
 	return nil
 }
 
-func (a *assembler) emitRmWidth1(opcode byte, ext byte, arg *argument, rest ...byte) (error, bool) {
+func (a *assembler) emitRmWidth1(opcode byte, ext byte, arg *argument) (error, bool) {
 	if arg.IsByte() {
-		return a.emitRm(opcode, ext, arg, rest...), true
+		return a.emitRm(opcode, ext, arg), true
 	}
 	if arg.IsWord() {
-		return a.emitRm(opcode|1, ext, arg, rest...), true
+		return a.emitRm(opcode|1, ext, arg), true
 	}
 	return nil, false
 }
 
-func (a *assembler) emitRmWidth2(opcode byte, ext byte, a1, a2 *argument, rest ...byte) (error, bool) {
+func (a *assembler) emitRmWidth2(opcode byte, ext byte, a1, a2 *argument) (error, bool) {
 	if a1.IsByte() && a2.IsByte() {
-		return a.emitRm(opcode, ext, a1, rest...), true
+		return a.emitRm(opcode, ext, a1), true
 	}
 	if a1.IsWord() && a2.IsWord() {
-		return a.emitRm(opcode|1, ext, a1, rest...), true
+		return a.emitRm(opcode|1, ext, a1), true
 	}
 	return nil, false
 }
@@ -397,10 +397,6 @@ func (o jmpCall) emit(a *assembler, a1, a2 *argument) error {
 		a1.distance = near
 	} else if a1.distance == 0 && a1.IsDword() {
 		a1.distance = far
-	} else if a1.distance == near && a1.IsNoSize() {
-		a1.argType = a1.argType.WithSize(sizeWord)
-	} else if a1.distance == far && a1.IsNoSize() {
-		a1.argType = a1.argType.WithSize(sizeDword)
 	}
 
 	if a1.IsNum() {

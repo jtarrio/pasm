@@ -28,14 +28,14 @@ _pui16_div_:
     OR AX, AX   ; If divisor is 0, done
     JNZ _pui16_div_
 
-    MOV AH, 02h ; Print char
 _pui16_out_:
     POP DX      ; Pop digit
     CMP DL, 9
-    JA _pui16_lo_
-    ADD DL, 27
+    JBE _pui16_lo_
+    ADD DL, 7
 _pui16_lo_:
     ADD DL, '0'
+    MOV AH, 02h ; Print char
     INT 21h     ; Print digit
     LOOP _pui16_out_
 

@@ -117,53 +117,34 @@ _epfx_emit_:
 ;   [ARG2] the second argument
 EMIT_INSTRUCTION:
     PUSH AX
-    MOV BL, BYTE PTR [ARG1 + ARG_TYPE]
-    CMP BL, ARGT_NONE
-    JZ _eins_emit_
-    AND BL, ARGT_MASK
-    CMP BL, ARGT_PTR
-    JNZ _eins_arg2_
-    MOV BL, BYTE PTR [ARG1 + ARG_EAMODE]
-    TEST BL, EA_SEGMENT
-    JZ _eins_arg2_
-    AND BL, EA_NOSEGMENT
-    MOV BYTE PTR [ARG1 + ARG_EAMODE], BL
-    MOV AL, [ARG1 + ARG_SEGMENT]
-    CALL EMIT_SEGMENT_
-_eins_arg2_:
-    MOV BL, BYTE PTR [ARG2 + ARG_TYPE]
-    CMP BL, ARGT_NONE
-    JZ _eins_emit_
-    AND BL, ARGT_MASK
-    CMP BL, ARGT_PTR
-    JNZ _eins_emit_
-    MOV BL, BYTE PTR [ARG2 + ARG_EAMODE]
-    TEST BL, EA_SEGMENT
-    JZ _eins_emit_
-    AND BL, EA_NOSEGMENT
-    MOV BYTE PTR [ARG2 + ARG_EAMODE], BL
-    MOV AL, [ARG2 + ARG_SEGMENT]
-    CALL EMIT_SEGMENT_
+    PUSH BX
+    MOV BX, ARG1
+    CALL EMIT_SEGMENT_OVERRIDE_
+    JC _eins_emit_
+    MOV BX, ARG2
+    CALL EMIT_SEGMENT_OVERRIDE_
 
 _eins_emit_:
-    POP AX
-    PUSH AX
-    PUSH BX
     PUSH CX
     PUSH DX
     PUSH DI
     PUSH SI
     XOR AH, AH
-    MOV BX, AX
-    SUB BX, KW_AAA
-    ADD BX, BX
-    ; Now BX has the index of the pointer to the instruction's definition
-    MOV BX, WORD PTR [INSTR_TABLE + BX]
-    ; Now BX has a pointer to the instruction's definition
-    MOV AX, [BX]
-    ADD BX, 2
-    ; Now AX points to the instruction emitter and BX to the first arg
-    CALL AX
+    MOV SI, AX
+    SUB SI, KW_AAA
+    ; Now SI has the index of the pointer to the instruction's definition
+    ADD SI, SI
+    MOV BP, WORD PTR [INSTR_TABLE + SI]
+    ; Now BP has a pointer to the instruction's definition
+    MOV SI, [BP]
+    ADD BP, 2
+    MOV AL, BYTE PTR [ARG1 + ARG_TYPE]
+    MOV AH, BYTE PTR [ARG2 + ARG_TYPE]
+    ; AL = arg1's type
+    ; AH = arg2's type
+    ; SI = address of the instruction emitter
+    ; BP = address of arguments for the instruction emitter
+    CALL SI
     POP SI
     POP DI
     POP DX
@@ -172,17 +153,31 @@ _eins_emit_:
     POP AX
     RET
 
-; Procedure EMIT_SEGMENT_
+; Procedure EMIT_SEGMENT_OVERRIDE_
 ; Inputs:
-;   AL the segment argument (ASEG_CS, etc.) to emit
-EMIT_SEGMENT_:
+;   BX pointer to the argument
+; Outputs:
+;   CF set if an override was emitted, unset otherwise
+EMIT_SEGMENT_OVERRIDE_:
     PUSH AX
     PUSH CX
+    CLC
+    MOV AL, BYTE PTR [BX + ARG_TYPE]
+    TEST AL, ARGT_PTR
+    JZ _esegovr_ret_
+    MOV AL, BYTE PTR [BX + ARG_EAMODE]
+    TEST AL, EA_SEGMENT
+    JZ _esegovr_ret_
+    AND AL, EA_NOSEGMENT
+    MOV BYTE PTR [BX + ARG_EAMODE], AL
+    MOV AL, [BX + ARG_SEGMENT]
     AND AL, 3
     MOV CL, 3
     SHL AL, CL
     OR AL, 00100110b
     CALL EMIT_BYTE
+    STC
+_esegovr_ret_:
     POP CX
     POP AX
     RET

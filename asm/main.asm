@@ -14,13 +14,36 @@ start:
 
 start_assembly:
     CALL LEXER_START
+    CALL ASSEMBLE
+
+    ; Open 'pasm.co2'
+    MOV AH, 3Ch
+    XOR CX, CX
+    MOV DX, pasm_co2
+    INT 21h
+    JC output_error
+    MOV [OUTPUT], AX
+    CALL ASSEMBLE
+
+    CALL WRITE_FLUSH
+
+    MOV AH, 3Eh
+    MOV BX, [LX_FILE_HANDLE]
+    INT 21h
+    MOV AH, 3Eh
+    MOV BX, [OUTPUT]
+    INT 21h
 
     MOV AX, 4C00h
     INT 21h
 
+output_error:
+    JMP ERROR_FILE_OPEN_WRITE
+
 copyright   DB 'PASM version ', version, ' Copyright 2026 Jacobo Tarrio.'
             DB 13,10,'$'
 pasm_asm    DB 'pasm.asm',0
+pasm_co2    DB 'pasm.co2',0
 
 
 ; Procedure RESERVE_MEMORY

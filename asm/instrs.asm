@@ -28,7 +28,6 @@ INSTR_TABLE DW _etbl_aaa_, _etbl_aad_, _etbl_aam_, _etbl_aas_
             DW _etbl_stosw_, _etbl_sti_, _etbl_sub_, _etbl_test_
             DW _etbl_wait_, _etbl_xchg_, _etbl_xlat_, _etbl_xor_
 
-
 _etbl_aaa_      DW i_noargs_
                 DB 00110111b
 _etbl_aad_      DW i_aamaad_
@@ -253,11 +252,254 @@ _etbl_xlat_     DW i_noargs_
 _etbl_xor_      DW i_arith_
                 DB 00110100b, 00110000b, 10000000b, 110b, 0, 0
 
+; Accumulator register (AL and AX have the same value)
+AREG_ACC EQU AREG_AX
+; An invalid opcode sentinel
+INVALID_OP  EQU 0Fh
+
+; Instruction pattern for a no-args single-byte instruction
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BP = address of arguments for the instruction emitter
 i_noargs_:
+    CMP AL, ARGT_NONE
+    JNZ _i_noargs_err_
+    MOV AL, BYTE PTR [BP]
+    JMP EMIT_BYTE
+_i_noargs_err_:
+    JMP ERROR_UNEXPECTED_ARGUMENT
+
+; Instruction pattern for a 2-byte instruction with an optional argument
+; whose value is 10 by default (AAD/AAM)
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BP = address of arguments for the instruction emitter
 i_aamaad_:
+    MOV BL, BYTE PTR [BP]
+    MOV BH, 10
+    CMP AL, ARGT_NONE
+    JZ _i_aamaad_emit_
+    CMP AH, ARGT_NONE
+    JZ _i_aamaad_1arg_
+    JMP ERROR_EXPECTED_1_ARGUMENT
+_i_aamaad_1arg_:
+    CMP AL, ARGT_NUM + ARGS_BYTE
+    JNZ _i_aamaad_err_
+    MOV BH, BYTE PTR [ARG1 + ARG_BYTE]
+_i_aamaad_emit_:
+    MOV AX, BX
+    JMP EMIT_WORD
+_i_aamaad_err_:
+    JMP ERROR_INVALID_ARG
+
+; Instruction pattern for an arithmetic or logical instruction.
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BP = address of arguments for the instruction emitter
 i_arith_:
+    CMP AH, ARGT_NONE
+    JZ _i_arith_badargs_
+    CALL EQUATE_SIZES_
+    ; acc <- imm ?
+    TEST AH, ARGT_NUM               ; arg2 num
+    JZ _i_arith_regsrc_             ; if not, try arg2 reg
+    TEST AL, ARGT_REG               ; arg1 reg
+    JZ _i_arith_numsrc_             ; if not, try arg2 num (no acc)
+    CMP BYTE PTR [ARG1 + ARG_REGISTER], AREG_ACC    ; arg1 acc
+    JNZ _i_arith_numsrc_            ; if not, try arg2 num (no acc)
+    MOV BL, BYTE PTR [BP]
+    JMP IP_OP_A2VALUE_
+_i_arith_numsrc_:
+    ; (reg|ptr) <- imm ?
+    ; we already know arg2 is num
+    TEST AL, ARGT_REG + ARGT_PTR    ; arg1 reg|ptr
+    JZ _i_arith_err1_               ; if not, error arg1
+    MOV BX, WORD PTR [BP + 2]
+    MOV DL, BYTE PTR [BP + 4]
+    MOV BP, ARG1
+    JMP IP_RM_IMM_
+_i_arith_regsrc_:
+    ; (reg|ptr) <- reg ?
+    TEST AH, ARGT_REG               ; arg2 reg
+    JZ _i_arith_rmsrc_              ; if not, try arg2 reg|ptr
+    TEST AL, ARGT_REG + ARGT_PTR    ; arg1 reg|ptr
+    JZ _i_arith_err1_               ; if not, error arg1
+    MOV BL, BYTE PTR [BP + 1]
+    MOV BH, [ARG2 + ARG_REGISTER]
+    MOV BP, ARG1
+    JMP IP_RM_WIDTH2_
+_i_arith_rmsrc_:
+    ; reg <- (reg|ptr) ?
+    TEST AH, ARGT_REG + ARGT_PTR    ; arg2 reg|ptr
+    JZ _i_arith_err2_               ; if not, error arg2
+    TEST AL, ARGT_REG               ; arg1 register
+    JZ _i_arith_err1_               ; if not, error arg1
+    MOV BL, BYTE PTR [BP + 1]
+    CMP BYTE PTR [BP + 5], 0
+    JNZ _i_arith_norev_
+    OR BL, 2            ; Set direction if not TEST
+_i_arith_norev_:
+    MOV BH, [ARG1 + ARG_REGISTER]
+    MOV BP, ARG2
+    JMP IP_RM_WIDTH2_
+_i_arith_badargs_:
+    JMP ERROR_EXPECTED_2_ARGUMENTS
+_i_arith_err1_:
+    JMP ERROR_INVALID_ARG1
+_i_arith_err2_:
+    JMP ERROR_INVALID_ARG2
+
+; Instruction pattern for a JMP or CALL instruction.
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BP = address of arguments for the instruction emitter
 i_jmpcall_:
+    CMP AL, ARGT_NONE
+    JZ _i_jmpcall_badargs_
+    CMP AH, ARGT_NONE
+    JZ _i_jmpcall_adjust_
+_i_jmpcall_badargs_:
+    JMP ERROR_EXPECTED_1_ARGUMENT
+
+_i_jmpcall_adjust_:
+    MOV CX, WORD PTR [ARG1 + ARG_OFFSET]
+    SUB CX, WORD PTR [PC]
+    SUB CX, 2                       ; Compute displacement
+    ; Adjust the argument's distance and size
+    TEST AL, ARGS_MASK              ; No size?
+    JZ _i_jmpcall_seta1size_
+    CMP AL, ARGT_NUM + ARGS_BYTE    ; Immediate byte?
+    JZ _i_jmpcall_seta1size_
+    JMP SHORT _i_jmpcall_witha1size_
+_i_jmpcall_seta1size_:
+    AND AL, ARGT_MASK               ; Both, so set the size to word
+    OR AL, ARGS_WORD
+    MOV BYTE PTR [ARG1 + ARG_TYPE], AL
+_i_jmpcall_witha1size_:
+    MOV BL, BYTE PTR [ARG1 + ARG_DISTANCE]
+    CMP BL, 0                       ; No distance?
+    JNZ _i_jmpcall_do_
+_i_jmpcall_withnodistance_:
+    CMP AL, ARGT_NUM + ARGS_WORD    ; Word immediate?
+    JZ _i_jmpcall_wnd_imm_
+    MOV BL, DST_NEAR
+    TEST AL, ARGS_WORD              ; Word non-immediate?
+    JNZ _i_jmpcall_wnd_set_         ; Set to NEAR
+    MOV BL, DST_FAR
+    TEST AL, ARGS_DWORD             ; Dword?
+    JNZ _i_jmpcall_wnd_set_         ; Set to FAR
+    JMP SHORT _i_jmpcall_do_
+_i_jmpcall_wnd_imm_:
+    MOV CX, WORD PTR [ARG1 + ARG_OFFSET]
+    SUB CX, WORD PTR [PC]
+    SUB CX, 2                       ; Compute displacement
+    MOV BL, DST_NEAR
+    CMP BYTE PTR [BP], INVALID_OP   ; No short direct opcode?
+    JZ _i_jmpcall_wnd_set_          ; Set to NEAR
+    CMP CX, -128                    ; < -128?
+    JL _i_jmpcall_wnd_set_          ; Set to NEAR
+    CMP CX, 0                       ; >= 0?
+    JGE _i_jmpcall_wnd_set_         ; Set to NEAR
+    MOV BL, DST_SHORT               ; Otherwise, set to SHORT
+_i_jmpcall_wnd_set_:
+    MOV BYTE PTR [ARG1 + ARG_DISTANCE], BL
+
+_i_jmpcall_do_:
+    TEST AL, ARGT_NUM               ; arg num?
+    JZ _i_jmpcall_regptr_           ; no, try arg reg|ptr
+    TEST AL, ARGS_WORD              ; arg word?
+    JZ _i_jmpcall_num_far_          ; no, try far jump
+    CMP BL, DST_SHORT               ; short jump?
+    JNZ _i_jmpcall_num_near_        ; no, try near jump
+    CMP BYTE PTR [BP], INVALID_OP   ; is there a short opcode?
+    JZ _i_jmpcall_num_near_         ; no, try near jump
+    ; SHORT imm
+    MOV CX, WORD PTR [ARG1 + ARG_OFFSET]
+    SUB CX, WORD PTR [PC]
+    SUB CX, 2                       ; Compute displacement
+    MOV BL, [BP]
+    JMP IP_SHORTJMP_
+_i_jmpcall_num_near_:
+    ; NEAR imm
+    CMP BL, DST_NEAR                ; near jump?
+    JNZ _i_jmpcall_num_far_         ; no, try far jump
+    MOV AL, [BP + 1]                ;
+    CALL EMIT_BYTE
+    MOV AX, WORD PTR [ARG1 + ARG_OFFSET]
+    SUB AX, WORD PTR [PC]
+    SUB AX, 2                       ; Compute displacement
+    JMP EMIT_WORD
+_i_jmpcall_num_far_:
+    ; FAR imm
+    CMP BL, DST_FAR                 ; far jump?
+    JNZ _i_jmpcall_err1_            ; no, error
+    TEST AL, ARGS_DWORD             ; arg dword?
+    JZ _i_jmpcall_err1_             ; no, error
+    MOV AL, [BP + 2]
+    CALL EMIT_BYTE
+    MOV AX, WORD PTR [ARG1 + ARG_DWORD]
+    MOV DX, WORD PTR [ARG1 + ARG_DWORD + 2]
+    JMP EMIT_DWORD
+_i_jmpcall_regptr_:
+    ; NEAR r/m
+    CMP BL, DST_NEAR                ; near jump?
+    JNZ _i_jmpcall_rm_far_          ; no, try far jump
+    TEST AL, ARGS_WORD              ; arg word?
+    JZ _i_jmpcall_err1_             ; no, error
+    MOV BX, [BP + 3]
+    MOV BP, ARG1
+    JMP IP_RM_
+_i_jmpcall_rm_far_:
+    ; FAR r/m
+    CMP BL, DST_FAR                 ; far jump?
+    JNZ _i_jmpcall_err1_            ; no, error
+    TEST AL, ARGS_DWORD             ; arg dword?
+    JZ _i_jmpcall_err1_             ; no, error
+    MOV BL, [BP + 3]
+    MOV BH, [BP + 5]
+    MOV BP, ARG1
+    JMP IP_RM_
+_i_jmpcall_err1_:
+    JMP ERROR_INVALID_ARG
+
+
+; Instruction pattern for a unary instruction.
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BP = address of arguments for the instruction emitter
 i_unary_:
+    CMP AL, ARGT_NONE
+    JZ _i_unary_badargs_
+    CMP AH, ARGT_NONE
+    JNZ _i_unary_badargs_
+
+    ; reg
+    CMP BYTE PTR [BP], INVALID_OP   ; Is there a reg opcode?
+    JZ _i_unary_rm_                 ; No, try r/m
+    CMP AL, ARGT_REG + ARGS_WORD    ; arg word register?
+    JNZ _i_unary_rm_                ; No, try r/m
+    MOV AL, BYTE PTR [BP]
+    OR AL, BYTE PTR [ARG1 + ARG_REGISTER]
+    JMP EMIT_BYTE
+_i_unary_rm_:
+    ; r/m
+    TEST AL, ARGT_REG + ARGT_PTR    ; arg reg|ptr?
+    JZ _i_unary_err_                ; no, error
+    MOV BX, [BP + 1]
+    MOV BP, ARG1
+    JMP IP_RM_WIDTH_
+
+_i_unary_badargs_:
+    JMP ERROR_EXPECTED_1_ARGUMENT
+_i_unary_err_:
+    JMP ERROR_INVALID_ARG
+
+
 i_esc_:
 i_inout_:
 i_interrupt_:
@@ -268,3 +510,259 @@ i_stack_:
 i_rotate_:
 i_ret_:
 i_xchg_:
+    RET
+
+; Instruction pattern IP_OP_A2VALUE_
+; One opcode followed by the value of arg2.
+; Arg1 is the accumulator (caller must check);
+; arg2 is a number the same size
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BL the opcode
+IP_OP_A2VALUE_:
+    TEST AL, ARGS_BYTE  ; Arg1 is byte?
+    JNZ _ipoa2v_byte_
+    TEST AL, ARGS_WORD  ; Arg1 is word?
+    JNZ _ipoa2v_word_
+    JMP ERROR_INVALID_ARG1
+_ipoa2v_byte_:
+    CMP AH, ARGT_NUM + ARGS_BYTE    ; Arg2 is byte num?
+    JNZ _ipoa2v_err2_               ; No, fail
+    MOV AL, BL
+    MOV AH, BYTE PTR [ARG2 + ARG_BYTE]
+    JMP EMIT_WORD                   ; emit opcode and value
+_ipoa2v_word_:
+    TEST AH, ARGT_NUM               ; Arg2 is num?
+    JZ _ipoa2v_err2_                ; no, fail
+    TEST AH, ARGS_DWORD             ; Arg2 is dword?
+    JNZ _ipoa2v_err2_               ; yes, fail
+    MOV AL, BL
+    OR AL, 1
+    CALL EMIT_BYTE                  ; emit the opcode
+    MOV AX, WORD PTR [ARG2 + ARG_WORD]
+    JMP EMIT_WORD                   ; and the value
+_ipoa2v_err2_:
+    JMP ERROR_INVALID_ARG2
+
+; Instruction pattern IP_RM_
+; An opcode followed by the ModR/M byte and an offset.
+; Inputs:
+;   BL the opcode
+;   BH the extension code
+;   BP the address of the argument to be encoded
+IP_RM_:
+    AND BH, 111b            ; Pre-shift the extension code
+    SHL BH, 1
+    SHL BH, 1
+    SHL BH, 1
+    MOV AL, BYTE PTR [BP + ARG_TYPE]
+    TEST AL, ARGT_REG   ; Register?
+    JNZ _iprm_reg_
+    TEST AL, ARGT_PTR   ; Pointer?
+    JNZ _iprm_ptr_
+    JMP ERROR_INVALID_ARG_BP
+_iprm_reg_:                 ; Register
+    MOV DH, BYTE PTR [BP + ARG_REGISTER]
+    OR DH, 11000000b        ; Compute mod and r/m
+    JMP SHORT _iprm_emit_
+_iprm_ptr_:                 ; Pointer
+    MOV SI, WORD PTR [BP + ARG_OFFSET]
+    MOV DH, BYTE PTR [BP + ARG_EAMODE]
+    TEST DH, EA_OFFSET      ; An offset has been specified?
+    JZ _iprm_emit_          ; No; emit 00xxxyyy
+    TEST DH, EA_OFFSET16    ; A 16-bit offset?
+    JNZ _iprm_ptr_offset16_ ; Yes; emit 16-bit offset
+    CMP SI, -128            ; Offset < -128?
+    JL _iprm_ptr_offset16_  ; Yes; emit 16-bit offset
+    CMP SI, 127             ; Offset > 127?
+    JG _iprm_ptr_offset16_  ; Yes; emit 16-bit offset
+    OR DH, 01000000b        ; Emit 01xxxyyy (8-bit offset)
+    JMP SHORT _iprm_emit_
+_iprm_ptr_offset16_:
+    OR DH, 10000000b        ; Emit 10xxxyyy (16-bit offset)
+_iprm_emit_:
+    AND DH, 11000111b       ; Clear the middle bits
+    OR BH, DH               ; Add the extension code
+    MOV AX, BX
+    CALL EMIT_WORD          ; Emit the opcode and mod/rm bytes
+
+    AND BH, 11000000b       ; Now we emit the offset based on mod
+    CMP BH, 11000000b       ; 11 is a register, so no offset
+    JZ _iprm_ret_
+    MOV AX, SI
+    CMP BH, 01000000b       ; 01, as we remember, is an 8-bit offset
+    JZ _iprm_8bitoff_
+    CMP BH, 10000000b       ; 10 is a 16-bit offset
+    JZ _iprm_16bitoff_
+    CMP BYTE PTR [BP + ARG_EAMODE], EA_DIRECT
+    JNZ _iprm_ret_          ; If EA mode is not DIRECT, no offset
+
+_iprm_16bitoff_:
+    JMP EMIT_WORD
+_iprm_8bitoff_:
+    JMP EMIT_BYTE
+_iprm_ret_:
+    RET
+
+; Instruction pattern IP_RM_WIDTH_
+; An opcode that depends on the argument's width, followed by ModR/M and
+; offset.
+; Inputs:
+;   BL the opcode
+;   BH the extension code
+;   BP the address of the argument to be encoded
+IP_RM_WIDTH_:
+    MOV AL, BYTE PTR [BP + ARG_TYPE]
+    TEST AL, ARGS_BYTE
+    JNZ _iprmw_byte_
+    TEST AL, ARGS_WORD
+    JNZ _iprmw_word_
+    JMP ERROR_INVALID_ARG_BP
+_iprmw_word_:
+    OR BL, 1
+_iprmw_byte_:
+    JMP IP_RM_
+
+; Instruction pattern IP_RM_WIDTH2_
+; An opcode that depends on the width of arg1 and arg2 (both the same)
+; followed by ModR/M and offset.
+; Inputs:
+;   BL the opcode
+;   BH the extension code
+;   BP the address of the argument to be encoded
+IP_RM_WIDTH2_:
+    MOV AL, BYTE PTR [ARG1 + ARG_TYPE]
+    MOV AH, BYTE PTR [ARG2 + ARG_TYPE]
+    TEST AL, ARGS_BYTE
+    JNZ _iprmw2_byte_
+    TEST AL, ARGS_WORD
+    JNZ _iprmw2_word_
+    JMP ERROR_INVALID_ARG1
+_iprmw2_byte_:
+    TEST AH, ARGS_BYTE
+    JZ _iprmw2_err2_
+    JMP IP_RM_
+_iprmw2_word_:
+    TEST AH, ARGS_WORD
+    JZ _iprmw2_err2_
+    OR BL, 1
+    JMP IP_RM_
+_iprmw2_err2_:
+    JMP ERROR_INVALID_ARG2
+
+; Instruction pattern IP_RM_IMM_
+; An opcode that depends on the width of arg1 and arg2
+; followed by ModR/M, an offset, and the value of arg2.
+; Inputs:
+;   BL the opcode
+;   BH the extension code
+;   DL whether to do sign extension of a byte onto a word destination
+;       (0 = false)
+;   BP the address of the argument to be encoded
+IP_RM_IMM_:
+    MOV AL, BYTE PTR [ARG1 + ARG_TYPE]
+    MOV AH, BYTE PTR [ARG2 + ARG_TYPE]
+    TEST AL, ARGS_BYTE
+    JNZ _iprmi_byte1_
+    TEST AL, ARGS_WORD
+    JNZ _iprmi_word1_
+    JMP ERROR_INVALID_ARG1
+_iprmi_byte1_:
+    TEST AH, ARGS_BYTE
+    JZ _iprmi_err2_
+    CALL IP_RM_
+    MOV AL, BYTE PTR [ARG2 + ARG_BYTE]
+    JMP EMIT_BYTE
+_iprmi_word1_:
+    TEST AH, ARGS_BYTE
+    JZ _iprmi_word2_
+    CMP DL, 0
+    JZ _iprmi_emit_word_
+    MOV DX, WORD PTR [ARG2 + ARG_WORD]
+    CMP DX, 127
+    JG _iprmi_emit_word_
+    OR BL, 3
+    CALL IP_RM_
+    MOV AL, DL
+    JMP EMIT_BYTE
+_iprmi_word2_:
+    TEST AH, ARGS_WORD
+    JZ _iprmi_err2_
+_iprmi_emit_word_:
+    OR BL, 1
+    CALL IP_RM_
+    MOV AX, WORD PTR [ARG2 + ARG_WORD]
+    JMP EMIT_WORD
+_iprmi_err2_:
+    JMP ERROR_INVALID_ARG2
+
+; Instruction pattern IP_SHORTJMP_
+; A short jump.
+; Inputs:
+;   BL the opcode
+;   CX the displacement
+IP_SHORTJMP_:
+    CMP [PASS], 2
+    JNZ _ipsj_emit_
+    CMP CX, -128
+    JL _ipsj_err_
+    CMP CX, 127
+    JG _ipsj_err_
+_ipsj_emit_:
+    MOV AH, CL
+    MOV AL, BL
+    JMP EMIT_WORD
+_ipsj_err_:
+    JMP ERROR_TOO_FAR
+
+; Procedure EQUATE_SIZES_
+; If one of the arguments is of indeterminate size and the other
+; isn't, sets the size of the first
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+; Returns:
+;   AL = arg1's type
+;   AH = arg2's type
+EQUATE_SIZES_:
+    TEST AL, ARGS_MASK + ARGT_SEG
+    JZ _eqs_arg2_check_
+    TEST AH, ARGS_MASK + ARGT_SEG
+    JZ _eqs_arg1_check_
+    RET
+_eqs_arg1_check_:
+    TEST AL, ARGS_BYTE
+    JNZ _eqs_arg2_setbyte_
+    TEST AL, ARGS_WORD + ARGT_SEG
+    JNZ _eqs_arg2_setword_
+    RET
+_eqs_arg2_check_:
+    TEST AH, ARGT_NUM
+    JNZ _eqs_arg2_check_ret_
+    TEST AH, ARGS_BYTE
+    JNZ _eqs_arg1_setbyte_
+    TEST AH, ARGS_WORD + ARGT_SEG
+    JNZ _eqs_arg1_setword_
+_eqs_arg2_check_ret_:
+    RET
+_eqs_arg2_setbyte_:
+    AND AH, ARGT_MASK
+    OR AH, ARGS_BYTE
+    JMP SHORT _eqs_arg2_set_
+_eqs_arg2_setword_:
+    AND AH, ARGT_MASK
+    OR AH, ARGS_WORD
+_eqs_arg2_set_:
+    MOV BYTE PTR [ARG2 + ARG_TYPE], AH
+    RET
+_eqs_arg1_setbyte_:
+    AND AL, ARGT_MASK
+    OR AL, ARGS_BYTE
+    JMP SHORT _eqs_arg1_set_
+_eqs_arg1_setword_:
+    AND AL, ARGT_MASK
+    OR AL, ARGS_WORD
+_eqs_arg1_set_:
+    MOV BYTE PTR [ARG1 + ARG_TYPE], AL
+    RET

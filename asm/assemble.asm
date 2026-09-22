@@ -285,11 +285,10 @@ PARSE_DW_SEQ_:
     CALL PARSE_DUP_             ; Puts count in CX, argument in [DI]
     JCXZ _pdws_epilog_          ; Skip if the count is zero
     MOV AL, [ARG1 + ARG_TYPE]
-    AND AL, ARGT_MASK
-    CMP AL, ARGT_NUM            ; Number?
-    JZ _pdws_nums_
-    CMP AL, ARGT_STR            ; String?
-    JZ _pdws_string_
+    TEST AL, ARGT_NUM           ; Number?
+    JNZ _pdws_nums_
+    TEST AL, ARGT_STR           ; String?
+    JNZ _pdws_string_
 _pdws_error_:
     JMP ERROR_EXPECTED_WORD
 _pdws_nums_:
@@ -375,9 +374,8 @@ PARSE_DUP_:
     PUSH AX                     ; Stash the count
 _pdup_loop_:
     MOV AL, [ARG1 + ARG_TYPE]
-    AND AL, ARGT_MASK
-    CMP AL, ARGT_NUM            ; Argument is a number?
-    JNZ _pdup_exit_             ; No, so don't look for DUP
+    TEST AL, ARGT_NUM           ; Argument is a number?
+    JZ _pdup_exit_              ; No, so don't look for DUP
     CMP_TOKEN_TYPE TK_KEYWORD   ; Keyword?
     JNZ _pdup_exit_             ; No, so don't look for DUP
     CMP_TOKEN_VALUE KW_DUP      ; DUP?

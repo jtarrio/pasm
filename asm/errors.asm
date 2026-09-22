@@ -1,7 +1,12 @@
 ERROR_FILE_OPEN_READ:
     MOV DX, _em_file_open_read
     JMP PRINT_ERROR
-_em_file_open_read    DB 'Error opening file for read$'
+_em_file_open_read DB 'Error opening file for read$'
+
+ERROR_FILE_OPEN_WRITE:
+    MOV DX, _em_file_open_write
+    JMP PRINT_ERROR
+_em_file_open_write DB 'Error opening file for write$'
 
 ERROR_SEEK:
     MOV DX, _em_seek
@@ -23,9 +28,9 @@ ERROR_INVALID_CHAR:
     MOV [_eim_char_chr], AL
     MOV DX, _eim_char
     JMP PRINT_ERROR_LINE
-_eim_char  DB 'Invalid character ',39
-_eim_char_chr  DB 0
-                        DB 39,'$'
+_eim_char       DB 'Invalid character ',39
+_eim_char_chr   DB 0
+                DB 39,'$'
 
 ERROR_UNEXPECTED_EOF:
     MOV DX, _eum_eof
@@ -221,6 +226,57 @@ ERROR_INVALID_PREFIX:
     MOV DX, _eim_prefix
     JMP PRINT_ERROR_LINE_1
 _eim_prefix DB 'Internal error: unexpected prefix $'
+
+ERROR_TOO_FAR:
+    MOV DX, _em_too_far
+    JMP PRINT_ERROR_LINE
+_em_too_far DB 'Destination address is too far for a short jump$'
+
+ERROR_UNEXPECTED_ARGUMENT:
+    MOV DX, _eum_argument
+    JMP PRINT_ERROR_LINE
+_eum_argument DB 'Unexpected argument$'
+
+ERROR_EXPECTED_1_ARGUMENT:
+    MOV DX, _eem_1_argument
+    JMP PRINT_ERROR_LINE
+_eem_1_argument DB 'Unexpected second argument$'
+
+ERROR_EXPECTED_2_ARGUMENTS:
+    MOV DX, _eem_2_arguments
+    JMP PRINT_ERROR_LINE
+_eem_2_arguments DB 'Expected two arguments$'
+
+ERROR_INVALID_ARG:
+    MOV DX, _eim_arg
+    JMP PRINT_ERROR_LINE
+_eim_arg DB 'Invalid argument$'
+
+ERROR_INVALID_ARGS:
+    MOV DX, _eim_args
+    JMP PRINT_ERROR_LINE
+_eim_args DB 'Invalid arguments$'
+
+ERROR_INVALID_ARG1:
+    MOV DX, _eim_arg1
+    JMP PRINT_ERROR_LINE
+_eim_arg1 DB 'Invalid first argument$'
+
+ERROR_INVALID_ARG2:
+    MOV DX, _eim_arg2
+    JMP PRINT_ERROR_LINE
+_eim_arg2 DB 'Invalid second arguments$'
+
+ERROR_INVALID_ARG_BP:
+    CMP BP, ARG1
+    JZ _eiabp_err1_
+    CMP BP, ARG2
+    JZ _eiabp_err2_
+    JMP ERROR_INVALID_ARG
+_eiabp_err1_:
+    JMP ERROR_INVALID_ARG1
+_eiabp_err2_:
+    JMP ERROR_INVALID_ARG2
 
 ; Procedure PRINT_ERROR_LINE
 ; Displays an error message with a line number and exits.
