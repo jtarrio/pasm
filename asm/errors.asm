@@ -265,7 +265,7 @@ _eim_arg1 DB 'Invalid first argument$'
 ERROR_INVALID_ARG2:
     MOV DX, _eim_arg2
     JMP PRINT_ERROR_LINE
-_eim_arg2 DB 'Invalid second arguments$'
+_eim_arg2 DB 'Invalid second argument$'
 
 ERROR_INVALID_ARG_BP:
     CMP BP, ARG1
@@ -297,10 +297,10 @@ PRINT_ERROR_LINE_1:
 PRINT_ERROR_LINE_:
     PUSH CS
     POP DS
-    CMP WORD PTR [LINE], 0
+    CMP WORD PTR [TOKEN + TOKEN_LINE], 0
     JZ PRINT_ERROR
     PUSH DX
-    MOV AX, [LINE]
+    MOV AX, WORD PTR [TOKEN + TOKEN_LINE]
     CALL PRINT_UINT16_DEC
     MOV AH, 09h
     MOV DX, _pe_colon_

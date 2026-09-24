@@ -2,9 +2,9 @@
 INSTR_TABLE DW _etbl_aaa_, _etbl_aad_, _etbl_aam_, _etbl_aas_
             DW _etbl_adc_, _etbl_add_, _etbl_and_, _etbl_call_
             DW _etbl_cbw_, _etbl_clc_, _etbl_cld_, _etbl_cli_
-            DW _etbl_cmc_, _etbl_cmpsb_, _etbl_cmpsw_, _etbl_cmp_
+            DW _etbl_cmc_, _etbl_cmp_, _etbl_cmpsb_, _etbl_cmpsw_
             DW _etbl_cwd_, _etbl_daa_, _etbl_das_, _etbl_dec_
-            DW _etbl_div_, _etbl_hlt_, _etbl_esc_, _etbl_idiv_
+            DW _etbl_div_, _etbl_esc_, _etbl_hlt_, _etbl_idiv_
             DW _etbl_imul_, _etbl_in_, _etbl_inc_, _etbl_int_
             DW _etbl_into_, _etbl_iret_, _etbl_ja_, _etbl_jae_
             DW _etbl_jb_, _etbl_jbe_, _etbl_jc_, _etbl_jcxz_
@@ -18,14 +18,14 @@ INSTR_TABLE DW _etbl_aaa_, _etbl_aad_, _etbl_aam_, _etbl_aas_
             DW _etbl_lea_, _etbl_les_, _etbl_lodsb_, _etbl_lodsw_
             DW _etbl_loop_, _etbl_loope_, _etbl_loopne_, _etbl_loopnz_
             DW _etbl_loopz_, _etbl_mov_, _etbl_movsb_, _etbl_movsw_
-            DW _etbl_mul_, _etbl_neg_, _etbl_not_, _etbl_nop_
+            DW _etbl_mul_, _etbl_neg_, _etbl_nop_, _etbl_not_
             DW _etbl_or_, _etbl_out_, _etbl_pop_, _etbl_popf_
             DW _etbl_push_, _etbl_pushf_, _etbl_rcl_, _etbl_rcr_
             DW _etbl_ret_, _etbl_retf_, _etbl_retn_, _etbl_rol_
             DW _etbl_ror_, _etbl_sahf_, _etbl_sal_, _etbl_sar_
             DW _etbl_sbb_, _etbl_scasb_, _etbl_scasw_, _etbl_shl_
-            DW _etbl_shr_, _etbl_stc_, _etbl_std_, _etbl_stosb_
-            DW _etbl_stosw_, _etbl_sti_, _etbl_sub_, _etbl_test_
+            DW _etbl_shr_, _etbl_stc_, _etbl_std_, _etbl_sti_
+            DW _etbl_stosb_, _etbl_stosw_, _etbl_sub_, _etbl_test_
             DW _etbl_wait_, _etbl_xchg_, _etbl_xlat_, _etbl_xor_
 
 _etbl_aaa_      DW i_noargs_
@@ -54,12 +54,12 @@ _etbl_cli_      DW i_noargs_
                 DB 11111010b
 _etbl_cmc_      DW i_noargs_
                 DB 11110101b
+_etbl_cmp_      DW i_arith_
+                DB 00111100b, 00111000b, 10000000b, 111b, 1, 0
 _etbl_cmpsb_    DW i_noargs_
                 DB 10100110b
 _etbl_cmpsw_    DW i_noargs_
                 DB 10100111b
-_etbl_cmp_      DW i_arith_
-                DB 00111100b, 00111000b, 10000000b, 111b, 1, 0
 _etbl_cwd_      DW i_noargs_
                 DB 10011001b
 _etbl_daa_      DW i_noargs_
@@ -70,9 +70,9 @@ _etbl_dec_      DW i_unary_
                 DB 01001000b, 11111110b, 001b
 _etbl_div_      DW i_unary_
                 DB 0Fh, 11110110b, 110b
+_etbl_esc_      DW i_esc_
 _etbl_hlt_      DW i_noargs_
                 DB 11110100b
-_etbl_esc_      DW i_esc_
 _etbl_idiv_     DW i_unary_
                 DB 0Fh, 11110110b, 111b
 _etbl_imul_     DW i_unary_
@@ -183,10 +183,10 @@ _etbl_mul_      DW i_unary_
                 DB 0Fh, 11110110b, 100b
 _etbl_neg_      DW i_unary_
                 DB 0Fh, 11110110b, 011b
-_etbl_not_      DW i_unary_
-                DB 0Fh, 11110110b, 010b
 _etbl_nop_      DW i_noargs_
                 DB 10010000b
+_etbl_not_      DW i_unary_
+                DB 0Fh, 11110110b, 010b
 _etbl_or_       DW i_arith_
                 DB 00001100b, 00001000b, 10000000b, 001b, 0, 0
 _etbl_out_      DW i_inout_
@@ -233,12 +233,12 @@ _etbl_stc_      DW i_noargs_
                 DB 11111001b
 _etbl_std_      DW i_noargs_
                 DB 11111101b
+_etbl_sti_      DW i_noargs_
+                DB 11111011b
 _etbl_stosb_    DW i_noargs_
                 DB 10101010b
 _etbl_stosw_    DW i_noargs_
                 DB 10101011b
-_etbl_sti_      DW i_noargs_
-                DB 11111011b
 _etbl_sub_      DW i_arith_
                 DB 00101100b, 00101000b, 10000000b, 101b, 1, 0
 _etbl_test_     DW i_arith_
@@ -977,8 +977,8 @@ IP_OP_A2VALUE_:
 _ipoa2v_word_:
     TEST AL, ARGS_WORD      ; arg1 word?
     JZ _ipoa2v_err1_        ; no, error arg1
-    TEST AH, ARGS_WORD      ; arg2 word?
-    JZ _ipoa2v_err2_       ; no, error arg2
+    TEST AH, ARGS_DWORD     ; arg2 dword?
+    JNZ _ipoa2v_err2_       ; yes, error arg2
     MOV AL, BL
     OR AL, 1
     CALL EMIT_BYTE

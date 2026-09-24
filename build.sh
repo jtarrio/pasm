@@ -2,7 +2,6 @@
 
 cat \
   asm/pasm.asm \
-  asm/errors.asm \
   asm/token.asm \
   asm/lexer.asm \
   asm/labels.asm \
@@ -13,5 +12,6 @@ cat \
   asm/emit.asm \
   asm/util.asm \
   asm/main.asm \
+  asm/errors.asm \
 > pasm.asm
 go run ./go/cmd/pasm pasm.asm pasm.com
