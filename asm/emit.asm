@@ -1,8 +1,8 @@
 OUTPUT      DW 0        ; Assembler output handle
 PC          DW 0        ; Program counter
-OUT_BUFSIZE EQU 1024    ; Size of the output buffer
+OUT_BUFSIZE EQU bufsize ; Size of the output buffer
 OUT_BUFPOS  DW 0        ; Position in the output buffer
-OUT_BUFFER  DB OUT_BUFSIZE DUP (0)    ; Output buffer
+OUT_BUFFER  EQU output_buffer   ; Output buffer
 
 ; Procedure EMIT_ORG
 ; Inputs:

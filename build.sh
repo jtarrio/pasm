@@ -13,5 +13,6 @@ cat \
   asm/util.asm \
   asm/main.asm \
   asm/errors.asm \
+  asm/end.asm \
 > pasm.asm
 go run ./go/cmd/pasm pasm.asm pasm.com

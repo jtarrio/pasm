@@ -7,8 +7,8 @@ LX_C            DB -1           ; Last read character (uppercase)
 LX_RAWC         DB -1           ; Last read character (raw)
 LX_EOF          DB 0            ; Reached end of file
 LX_EOL          DB 0            ; Reached end of line
-LX_BUFSIZE      EQU 1024        ; Size of the read buffer
-LX_BUFFER       DB LX_BUFSIZE DUP(0)  ; Read buffer
+LX_BUFSIZE      EQU bufsize     ; Size of the read buffer
+LX_BUFFER       EQU input_buffer    ; Read buffer
 LX_BUFLEN       DW 0            ; Length of the read buffer
 LX_BUFPOS       DW 0            ; Position in the read buffer
 LX_EQUTOKEN     DW 0            ; Current token in EQU expansion

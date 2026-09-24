@@ -1,27 +1,27 @@
-start:
+main:
     MOV AH, 09h             ; Display the copyright notice
-    MOV DX, copyright
+    MOV DX, _main_copyright
     INT 21h
 
     CALL RESERVE_MEMORY
 
     ; Open 'pasm.asm'
     MOV AX, 3D00h
-    MOV DX, pasm_asm
+    MOV DX, _main_pasm_asm
     INT 21h
-    JNC start_assembly
+    JNC _main_start
     JMP ERROR_FILE_OPEN_READ
 
-start_assembly:
+_main_start:
     CALL LEXER_START
     CALL ASSEMBLE
 
     ; Open 'pasm.co2'
     MOV AH, 3Ch
     XOR CX, CX
-    MOV DX, pasm_co2
+    MOV DX, _main_pasm_co2
     INT 21h
-    JC output_error
+    JC _main_output_error
     MOV [OUTPUT], AX
     CALL ASSEMBLE
 
@@ -37,13 +37,13 @@ start_assembly:
     MOV AX, 4C00h
     INT 21h
 
-output_error:
+_main_output_error:
     JMP ERROR_FILE_OPEN_WRITE
 
-copyright   DB 'PASM version ', version, ' Copyright 2026 Jacobo Tarrio.'
-            DB 13,10,'$'
-pasm_asm    DB 'pasm.asm',0
-pasm_co2    DB 'pasm.co2',0
+_main_copyright DB 'PASM version ', version
+                DB' Copyright 2026 Jacobo Tarrio.',13,10,'$'
+_main_pasm_asm  DB 'pasm.asm',0
+_main_pasm_co2  DB 'pasm.co2',0
 
 
 ; Procedure RESERVE_MEMORY
@@ -61,9 +61,9 @@ RESERVE_MEMORY:
     MOV BX, CS
     SUB AX, BX          ; See how much memory has been allocated
     CMP AX, 3000h       ; We need at least 3 segments (1000h paras each)
-    JAE _pl_ok_
+    JAE _rm_ok_
     JMP ERROR_MEMORY
-_pl_ok_:
+_rm_ok_:
     MOV AX, CS          ; Get the segment right after CS
     ADD AX, 1000h
     MOV [LABELSEG], AX  ; and store it in LABELSEG
