@@ -304,39 +304,39 @@ i_arith_:
     JZ _i_arith_badargs_
     CALL EQUATE_SIZES_
     ; acc <- imm ?
-    TEST AH, ARGT_NUM               ; arg2 num
-    JZ _i_arith_regsrc_             ; if not, try arg2 reg
-    TEST AL, ARGT_REG               ; arg1 reg
-    JZ _i_arith_numsrc_             ; if not, try arg2 num (no acc)
-    CMP BYTE PTR [ARG1 + ARG_REGISTER], AREG_ACC    ; arg1 acc
-    JNZ _i_arith_numsrc_            ; if not, try arg2 num (no acc)
+    TEST AH, ARGT_NUM               ; arg2 num?
+    JZ _i_arith_regsrc_             ; no, try arg2 reg
+    TEST AL, ARGT_REG               ; arg1 reg?
+    JZ _i_arith_numsrc_             ; no, try arg2 num (no acc)
+    CMP BYTE PTR [ARG1 + ARG_REGISTER], AREG_ACC    ; arg1 acc?
+    JNZ _i_arith_numsrc_            ; no, try arg2 num (no acc)
     MOV BL, BYTE PTR [BP]
     JMP IP_OP_A2VALUE_
 _i_arith_numsrc_:
     ; (reg|ptr) <- imm ?
     ; we already know arg2 is num
-    TEST AL, ARGT_REG + ARGT_PTR    ; arg1 reg|ptr
-    JZ _i_arith_err1_               ; if not, error arg1
+    TEST AL, ARGT_REG + ARGT_PTR    ; arg1 reg|ptr?
+    JZ _i_arith_err1_               ; no, error arg1
     MOV BX, WORD PTR [BP + 2]
     MOV DL, BYTE PTR [BP + 4]
     MOV BP, ARG1
     JMP IP_RM_IMM_
 _i_arith_regsrc_:
     ; (reg|ptr) <- reg ?
-    TEST AH, ARGT_REG               ; arg2 reg
-    JZ _i_arith_rmsrc_              ; if not, try arg2 reg|ptr
-    TEST AL, ARGT_REG + ARGT_PTR    ; arg1 reg|ptr
-    JZ _i_arith_err1_               ; if not, error arg1
+    TEST AH, ARGT_REG               ; arg2 reg?
+    JZ _i_arith_rmsrc_              ; no, try arg2 reg|ptr
+    TEST AL, ARGT_REG + ARGT_PTR    ; arg1 reg|ptr?
+    JZ _i_arith_err1_               ; no, error arg1
     MOV BL, BYTE PTR [BP + 1]
     MOV BH, [ARG2 + ARG_REGISTER]
     MOV BP, ARG1
     JMP IP_RM_WIDTH2_
 _i_arith_rmsrc_:
     ; reg <- (reg|ptr) ?
-    TEST AH, ARGT_REG + ARGT_PTR    ; arg2 reg|ptr
-    JZ _i_arith_err2_               ; if not, error arg2
-    TEST AL, ARGT_REG               ; arg1 register
-    JZ _i_arith_err1_               ; if not, error arg1
+    TEST AH, ARGT_REG + ARGT_PTR    ; arg2 reg|ptr?
+    JZ _i_arith_err2_               ; no, error arg2
+    TEST AL, ARGT_REG               ; arg1 register?
+    JZ _i_arith_err1_               ; no, error arg1
     MOV BL, BYTE PTR [BP + 1]
     CMP BYTE PTR [BP + 5], 0
     JNZ _i_arith_norev_
@@ -499,18 +499,464 @@ _i_unary_badargs_:
 _i_unary_err_:
     JMP ERROR_INVALID_ARG
 
-
+; Instruction pattern for an escape instruction.
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BP = address of arguments for the instruction emitter
 i_esc_:
+    CMP AH, ARGT_NONE
+    JZ _i_esc_badargs_
+
+    TEST AL, ARGT_NUM               ; arg1 num?
+    JZ _i_esc_err1_                 ; no, error arg1
+    TEST AH, ARGT_REG + ARGT_PTR    ; arg2 reg|ptr?
+    JZ _i_esc_err2_                 ; no, error arg2
+    MOV DX, WORD PTR [ARG1 + ARG_WORD]
+    CMP DX, 40h                     ; value of arg1 < 40h?
+    JAE _i_esc_err1_                ; no, error arg1
+    MOV BL, DL
+    AND BL, 111000b
+    SHR BL, 1
+    SHR BL, 1
+    SHR BL, 1                       ; BL = (DL & 111000b) >> 3
+    OR BL, 11011000b                ; BL = BL | opcode
+    MOV BH, DL
+    AND BH, 111b                    ; BH = DL & 111b
+    MOV BP, ARG2
+    JMP IP_RM_
+_i_esc_badargs_:
+    JMP ERROR_EXPECTED_2_ARGUMENTS
+_i_esc_err1_:
+    JMP ERROR_INVALID_ARG1
+_i_esc_err2_:
+    JMP ERROR_INVALID_ARG2
+
+; Instruction pattern for an IN or OUT instruction.
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BP = address of arguments for the instruction emitter
 i_inout_:
+    CMP AH, ARGT_NONE
+    JZ _i_inout_badargs_
+
+    MOV SI, ARG1                    ; SI contains the accumulator
+    MOV DI, ARG2                    ; DI contains the port number
+    CMP BYTE PTR [BP + 2], 0
+    JZ _i_inout_in_
+    MOV SI, ARG2
+    MOV DI, ARG1
+_i_inout_in_:
+    MOV AL, BYTE PTR [SI + ARG_TYPE]    ; AL has the accumulator's type
+    MOV AH, BYTE PTR [DI + ARG_TYPE]    ; AH has the port's type
+
+    TEST AL, ARGT_REG               ; acc reg?
+    JZ _i_inout_err1_               ; no; error acc
+    CMP BYTE PTR [SI + ARG_REGISTER], AREG_ACC  ; acc?
+    JNZ _i_inout_err1_              ; no; error acc
+    CMP AH, ARGT_NUM + ARGS_BYTE    ; port imm byte?
+    JNZ _i_inout_prtdx_             ; no; try DX
+    ; acc <-> imm
+    MOV BL, [BP]
+    TEST AL, ARGS_WORD
+    JZ _i_inout_prtimm_byte_
+    OR BL, 1
+_i_inout_prtimm_byte_:
+    MOV AL, BL
+    MOV AH, BYTE PTR [DI + ARG_BYTE]
+    JMP EMIT_WORD
+_i_inout_prtdx_:
+    CMP AH, ARGT_REG + ARGS_WORD    ; port reg word?
+    JNZ _i_inout_err2_              ; no; error port
+    CMP BYTE PTR [DI + ARG_REGISTER], AREG_DX   ; port DX?
+    JNZ _i_inout_err2_              ; no; error port
+    MOV BL, [BP + 1]
+    TEST AL, ARGS_WORD
+    JZ _i_inout_prtdx_byte_
+    OR BL, 1
+_i_inout_prtdx_byte_:
+    MOV AL, BL
+    JMP EMIT_BYTE
+_i_inout_badargs_:
+    JMP ERROR_EXPECTED_2_ARGUMENTS
+_i_inout_err1_:
+    MOV BP, SI
+    JMP ERROR_INVALID_ARG_BP
+_i_inout_err2_:
+    MOV BP, DI
+    JMP ERROR_INVALID_ARG_BP
+
+; Instruction pattern for a software interrupt instruction.
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BP = address of arguments for the instruction emitter
 i_interrupt_:
+    CMP AL, ARGT_NONE
+    JZ _i_interrupt_badargs_
+    CMP AH, ARGT_NONE
+    JNZ _i_interrupt_badargs_
+
+    CMP AL, ARGT_NUM + ARGS_BYTE            ; arg1 byte imm?
+    JNZ _i_interrupt_err_                   ; no, error
+    MOV BL, BYTE PTR [ARG1 + ARG_BYTE]
+    CMP BL, 3                               ; arg1 == 3?
+    JNZ _i_interrupt_any_                   ; no, any interrupt
+    MOV AL, [BP]
+    JMP EMIT_BYTE                           ; int3
+_i_interrupt_any_:
+    MOV AL, [BP + 1]
+    MOV AH, BL
+    JMP EMIT_WORD
+_i_interrupt_badargs_:
+    JMP ERROR_EXPECTED_1_ARGUMENT
+_i_interrupt_err_:
+    JMP ERROR_INVALID_ARG
+
+; Instruction pattern for a short jump instruction.
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BP = address of arguments for the instruction emitter
 i_jmpshort_:
+    CMP AL, ARGT_NONE
+    JZ _i_jmpshort_badargs_
+    CMP AH, ARGT_NONE
+    JNZ _i_jmpshort_badargs_
+
+    TEST AL, ARGT_NUM               ; arg1 imm?
+    JZ _i_jmpshort_err_             ; no, error
+    TEST AL, ARGS_DWORD             ; arg1 dword?
+    JNZ _i_jmpshort_err_            ; no, error
+    MOV CX, WORD PTR [ARG1 + ARG_OFFSET]
+    SUB CX, WORD PTR [PC]
+    SUB CX, 2                       ; Compute displacement
+    MOV BL, [BP]
+    JMP IP_SHORTJMP_
+_i_jmpshort_badargs_:
+    JMP ERROR_EXPECTED_1_ARGUMENT
+_i_jmpshort_err_:
+    JMP ERROR_INVALID_ARG
+
+; Instruction pattern for a load address instruction.
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BP = address of arguments for the instruction emitter
 i_loadaddr_:
+    CMP AH, ARGT_NONE
+    JZ _i_loadaddr_badargs_
+
+    CMP AL, ARGT_REG + ARGS_WORD            ; arg1 reg word?
+    JNZ _i_loadaddr_err1_                   ; no, error arg1
+    TEST AH, ARGT_PTR                       ; arg2 ptr?
+    JZ _i_loadaddr_err2_                    ; no, error arg2
+    MOV BL, [BP]
+    MOV BH, BYTE PTR [ARG1 + ARG_REGISTER]
+    MOV BP, ARG2
+    JMP IP_RM_
+_i_loadaddr_badargs_:
+    JMP ERROR_EXPECTED_2_ARGUMENTS
+_i_loadaddr_err1_:
+    JMP ERROR_INVALID_ARG1
+_i_loadaddr_err2_:
+    JMP ERROR_INVALID_ARG2
+
+; Instruction pattern for a MOV instruction.
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BP = address of arguments for the instruction emitter
 i_mov_:
+    CMP AH, ARGT_NONE
+    JNZ _i_mov_argsok_
+    JMP ERROR_EXPECTED_2_ARGUMENTS
+_i_mov_argsok_:
+    CALL EQUATE_SIZES_
+    ; reg|ptr word <- seg
+    TEST AH, ARGT_SEG               ; arg2 seg?
+    JZ _i_mov_segrm_                ; no, try seg <- reg|ptr
+    TEST AL, ARGT_REG + ARGT_PTR    ; arg1 reg|ptr?
+    JZ _i_mov_err1_                 ; no, error arg1
+    TEST AL, ARGS_WORD              ; arg1 word?
+    JZ _i_mov_err1_                 ; no, error arg1
+    MOV BL, BYTE PTR [BP + 5]
+    MOV BH, BYTE PTR [ARG2 + ARG_SEGMENT]
+    MOV BP, ARG1
+    JMP IP_RM_
+_i_mov_segrm_:
+    ; seg <- reg|ptr word
+    TEST AL, ARGT_SEG               ; arg1 seg?
+    JZ _i_mov_accptr_               ; no, try acc <- ptr
+    CMP BYTE PTR [ARG1 + ARG_SEGMENT], ASEG_CS  ; arg1 CS?
+    JZ _i_mov_err1_                 ; yes, error arg1
+    TEST AH, ARGT_REG + ARGT_PTR    ; arg2 reg|ptr?
+    JZ _i_mov_err2_                 ; no, error arg2
+    TEST AH, ARGS_WORD              ; arg2 word?
+    JZ _i_mov_err2_                 ; no, error arg2
+    MOV BL, BYTE PTR [BP + 5]
+    OR BL, 2
+    MOV BH, BYTE PTR [ARG1 + ARG_SEGMENT]
+    MOV BP, ARG2
+    JMP IP_RM_
+_i_mov_accptr_:
+    ; acc <- ptr (direct)
+    TEST AL, ARGT_REG               ; arg1 reg?
+    JZ _i_mov_ptracc_               ; no, try ptr <- acc
+    CMP BYTE PTR [ARG1 + ARG_REGISTER], AREG_ACC    ; arg1 acc?
+    JNZ _i_mov_regimm_              ; no, try reg <- imm
+    TEST AH, ARGT_PTR               ; arg2 ptr?
+    JZ _i_mov_regimm_               ; no, try reg <- imm
+    CMP BYTE PTR [ARG2 + ARG_EAMODE], EA_DIRECT     ; arg2 ea direct?
+    JNZ _i_mov_regimm_              ; no, try reg <- imm
+    MOV BL, BYTE PTR [BP]
+    MOV DX, WORD PTR [ARG2 + ARG_OFFSET]
+    JMP IP_OP_A2PTR_
+_i_mov_ptracc_:
+    ; ptr (direct) <- acc
+    TEST AL, ARGT_PTR               ; arg1 ptr?
+    JZ _i_mov_err1_                 ; no, error arg1
+    CMP BYTE PTR [ARG1 + ARG_EAMODE], EA_DIRECT     ; arg1 ea direct?
+    JNZ _i_mov_rmimm_               ; no, try reg|ptr <- imm
+    TEST AH, ARGT_REG               ; arg2 reg?
+    JZ _i_mov_rmimm_                ; no, try reg|ptr <- imm
+    CMP BYTE PTR [ARG2 + ARG_REGISTER], AREG_ACC    ; arg2 acc?
+    JNZ _i_mov_rmreg_               ; no, try reg|ptr <- reg
+    MOV BL, BYTE PTR [BP]
+    OR BL, 2
+    MOV DX, WORD PTR [ARG1 + ARG_OFFSET]
+    JMP IP_OP_A2PTR_
+    ; These errors are in the middle of the block for the
+    ; short jumps
+_i_mov_err1_:
+    JMP ERROR_INVALID_ARG1
+_i_mov_err2_:
+    JMP ERROR_INVALID_ARG2
+_i_mov_regimm_:
+    ; reg <- imm
+    ; (we already know arg1 reg)
+    TEST AH, ARGT_NUM               ; arg2 num?
+    JZ _i_mov_regptr_               ; no, try reg <- ptr
+    TEST AL, ARGS_BYTE              ; arg1 byte?
+    JZ _i_mov_regimm_word_          ; no, try arg1 word
+    TEST AH, ARGS_BYTE              ; arg2 byte?
+    JZ _i_mov_rmimm_                ; no, try reg|ptr <- imm
+    MOV AL, [BP + 1]
+    OR AL, [ARG1 + ARG_REGISTER]
+    MOV AH, [ARG2 + ARG_BYTE]
+    JMP EMIT_WORD
+_i_mov_regimm_word_:
+    TEST AH, ARGS_DWORD             ; arg2 dword?
+    JNZ _i_mov_err2_                ; yes, error arg2
+    MOV AL, [BP + 1]
+    OR AL, 8
+    OR AL, [ARG1 + ARG_REGISTER]
+    CALL EMIT_BYTE
+    MOV AX, WORD PTR [ARG2 + ARG_WORD]
+    JMP EMIT_WORD
+_i_mov_regptr_:
+    ; reg <- ptr
+    ; (we already know arg1 reg)
+    TEST AH, ARGT_PTR               ; arg2 ptr?
+    JZ _i_mov_rmimm_                ; no, try reg|ptr <- imm
+    MOV BL, BYTE PTR [BP + 2]
+    OR BL, 2
+    MOV BH, BYTE PTR [ARG1 + ARG_REGISTER]
+    MOV BP, ARG2
+    JMP IP_RM_WIDTH2_
+_i_mov_rmimm_:
+    ; reg|ptr <- imm
+    ; (we already know arg1 reg|ptr)
+    TEST AH, ARGT_NUM               ; arg2 num?
+    JZ _i_mov_rmreg_                ; no, try reg|ptr <- reg
+    MOV BX, WORD PTR [BP + 3]
+    XOR DX, DX
+    MOV BP, ARG1
+    JMP IP_RM_IMM_
+_i_mov_rmreg_:
+    ; reg|ptr <- reg
+    ; (we already know arg1 reg|ptr)
+    TEST AH, ARGT_REG               ; arg2 reg?
+    JZ _i_mov_err2_                 ; no, error arg2
+    MOV BL, BYTE PTR [BP + 2]
+    MOV BH, BYTE PTR [ARG2 + ARG_REGISTER]
+    MOV BP, ARG1
+    JMP IP_RM_WIDTH2_
+
+; Instruction pattern for a PUSH or POP instruction.
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BP = address of arguments for the instruction emitter
 i_stack_:
+    CMP AL, ARGT_NONE
+    JZ _i_stack_badargs_
+    CMP AH, ARGT_NONE
+    JNZ _i_stack_badargs_
+
+    TEST AL, ARGS_MASK
+    JNZ _i_stack_reg_
+    OR AL, ARGS_WORD
+
+_i_stack_reg_:
+    TEST AL, ARGS_WORD      ; arg1 word?
+    JZ _i_stack_err_        ; no, error arg
+    TEST AL, ARGT_REG       ; arg1 reg?
+    JZ _i_stack_ptr_        ; no, try ptr
+    MOV AL, BYTE PTR [BP]
+    OR AL, BYTE PTR [ARG1 + ARG_REGISTER]
+    JMP EMIT_BYTE
+_i_stack_ptr_:
+    TEST AL, ARGT_PTR       ; arg1 ptr?
+    JZ _i_stack_seg_        ; no, try seg
+    MOV BX, WORD PTR [BP + 1]
+    MOV BP, ARG1
+    JMP IP_RM_
+_i_stack_seg_:
+    TEST AL, ARGT_SEG       ; arg1 seg?
+    JZ _i_stack_err_        ; no, error arg
+    MOV AL, BYTE PTR [BP + 3]
+    MOV BL, BYTE PTR [ARG1 + ARG_SEGMENT]
+    CMP AL, 7               ; opcode is 7?
+    JNZ _i_stack_seg_emit_  ; no, emit
+    CMP BL, ASEG_CS         ; arg1 CS?
+    JZ _i_stack_err_        ; yes, error arg1
+_i_stack_seg_emit_:
+    SHL BL, 1
+    SHL BL, 1
+    SHL BL, 1
+    OR AL, BL
+    JMP EMIT_BYTE
+_i_stack_badargs_:
+    JMP ERROR_EXPECTED_1_ARGUMENT
+_i_stack_err_:
+    JMP ERROR_INVALID_ARG
+
+; Instruction pattern for a shift or rotate instruction.
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BP = address of arguments for the instruction emitter
 i_rotate_:
+    CMP AH, ARGT_NONE
+    JZ _i_rotate_badargs_
+    ; reg|ptr <- 1
+    TEST AL, ARGT_REG + ARGT_PTR    ; arg1 reg|ptr?
+    JZ _i_rotate_err1_              ; no, error arg1
+    TEST AH, ARGT_NUM               ; arg2 num?
+    JZ _i_rotate_cl_                ; no, try CL
+    TEST AH, ARGS_DWORD             ; arg2 dword?
+    JNZ _i_rotate_err2_             ; yes, error arg2
+    CMP WORD PTR [ARG2 + ARG_WORD], 1   ; arg2 == 1?
+    JNZ _i_rotate_err2_             ; no, error arg2
+    MOV BX, WORD PTR [BP]
+    MOV BP, ARG1
+    JMP IP_RM_WIDTH_
+_i_rotate_cl_:
+    ; reg|ptr <- CL
+    ; (we know arg1 reg|ptr)
+    TEST AH, ARGT_REG               ; arg2 register?
+    JZ _i_rotate_err2_              ; no, error arg2
+    TEST AH, ARGS_BYTE              ; arg2 byte?
+    JZ _i_rotate_err2_              ; no, error arg2
+    CMP BYTE PTR [ARG2 + ARG_REGISTER], AREG_CL ; arg2 CL?
+    JNZ _i_rotate_err2_             ; no, error arg2
+    MOV BX, WORD PTR [BP]
+    OR BL, 2
+    MOV BP, ARG1
+    JMP IP_RM_WIDTH_
+_i_rotate_badargs_:
+    JMP ERROR_EXPECTED_2_ARGUMENTS
+_i_rotate_err1_:
+    JMP ERROR_INVALID_ARG1
+_i_rotate_err2_:
+    JMP ERROR_INVALID_ARG2
+
+; Instruction pattern for a return instruction.
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BP = address of arguments for the instruction emitter
 i_ret_:
+    CMP AL, ARGT_NONE       ; any arguments?
+    JNZ _i_ret_1arg_        ; yes, try 1 argument
+    MOV AL, [BP]
+    JMP EMIT_BYTE
+_i_ret_1arg_:
+    CMP AH, ARGT_NONE       ; second argument?
+    JNZ _i_ret_badargs_     ; yes, error
+    TEST AL, ARGT_NUM       ; arg1 num?
+    JZ _i_ret_err_          ; no, error
+    TEST AL, ARGS_DWORD     ; arg1 dword?
+    JNZ _i_ret_err_         ; yes, error
+    MOV AL, [BP + 1]
+    CALL EMIT_BYTE
+    MOV AX, WORD PTR [ARG1 + ARG_WORD]
+    JMP EMIT_WORD
+_i_ret_badargs_:
+    JMP ERROR_EXPECTED_1_ARGUMENT
+_i_ret_err_:
+    JMP ERROR_INVALID_ARG
+
+; Instruction pattern for an XCHG instruction.
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BP = address of arguments for the instruction emitter
 i_xchg_:
-    RET
+    CMP AH, ARGT_NONE
+    JZ _i_xchg_badargs_
+    CALL EQUATE_SIZES_
+    ; AX <- reg
+    TEST AH, ARGT_REG       ; arg2 reg?
+    JZ _i_xchg_regrm_       ; no, try reg <- reg|ptr
+    TEST AL, ARGT_REG       ; arg1 reg?
+    JZ _i_xchg_rmreg_       ; no, try reg|ptr <- reg
+    TEST AL, ARGS_WORD      ; arg1 word?
+    JZ _i_xchg_rmreg_       ; no, try reg|ptr <- reg
+    TEST AH, ARGS_WORD      ; arg2 word?
+    JZ _i_xchg_rmreg_       ; no, try reg|ptr <- reg
+    CMP BYTE PTR [ARG1 + ARG_REGISTER], AREG_AX ; arg1 AX?
+    JNZ _i_xchg_regax_      ; no, try reg <- AX
+    MOV AL, BYTE PTR [BP]
+    OR AL, BYTE PTR [ARG2 + ARG_REGISTER]
+    JMP EMIT_BYTE
+_i_xchg_regax_:
+    ; reg <- AX
+    ; (we know arg1 and arg2 reg word)
+    CMP BYTE PTR [ARG2 + ARG_REGISTER], AREG_AX ; arg2 AX?
+    JNZ _i_xchg_rmreg_      ; no, try reg|ptr <- reg
+    MOV AL, BYTE PTR [BP]
+    OR AL, BYTE PTR [ARG1 + ARG_REGISTER]
+    JMP EMIT_BYTE
+_i_xchg_rmreg_:
+    ; reg|ptr <- reg
+    ; (we know arg2 reg)
+    TEST AL, ARGT_REG + ARGT_PTR    ; arg1 reg|ptr?
+    JZ _i_xchg_err1_                ; no, error arg1
+    MOV BL, BYTE PTR [BP + 1]
+    MOV BH, BYTE PTR [ARG2 + ARG_REGISTER]
+    MOV BP, ARG1
+    JMP IP_RM_WIDTH2_
+_i_xchg_regrm_:
+    ; reg <- reg|ptr
+    TEST AL, ARGT_REG               ; arg1 reg?
+    JZ _i_xchg_err1_                ; no, error arg1
+    TEST AH, ARGT_REG + ARGT_PTR    ; arg2 reg|ptr?
+    JZ _i_xchg_err2_                ; no, error arg2
+    MOV BL, BYTE PTR [BP + 1]
+    MOV BH, BYTE PTR [ARG1 + ARG_REGISTER]
+    MOV BP, ARG2
+    JMP IP_RM_WIDTH2_
+_i_xchg_badargs_:
+    JMP ERROR_EXPECTED_2_ARGUMENTS
+_i_xchg_err1_:
+    JMP ERROR_INVALID_ARG1
+_i_xchg_err2_:
+    JMP ERROR_INVALID_ARG2
+
+
 
 ; Instruction pattern IP_OP_A2VALUE_
 ; One opcode followed by the value of arg2.
@@ -521,28 +967,57 @@ i_xchg_:
 ;   AH = arg2's type
 ;   BL the opcode
 IP_OP_A2VALUE_:
-    TEST AL, ARGS_BYTE  ; Arg1 is byte?
-    JNZ _ipoa2v_byte_
-    TEST AL, ARGS_WORD  ; Arg1 is word?
-    JNZ _ipoa2v_word_
-    JMP ERROR_INVALID_ARG1
-_ipoa2v_byte_:
-    CMP AH, ARGT_NUM + ARGS_BYTE    ; Arg2 is byte num?
-    JNZ _ipoa2v_err2_               ; No, fail
+    TEST AL, ARGS_BYTE      ; arg1 byte?
+    JZ _ipoa2v_word_        ; no, try arg1 word
+    TEST AH, ARGS_BYTE      ; arg2 byte?
+    JZ _ipoa2v_err2_        ; no, error arg2
     MOV AL, BL
     MOV AH, BYTE PTR [ARG2 + ARG_BYTE]
-    JMP EMIT_WORD                   ; emit opcode and value
+    JMP EMIT_WORD
 _ipoa2v_word_:
-    TEST AH, ARGT_NUM               ; Arg2 is num?
-    JZ _ipoa2v_err2_                ; no, fail
-    TEST AH, ARGS_DWORD             ; Arg2 is dword?
-    JNZ _ipoa2v_err2_               ; yes, fail
+    TEST AL, ARGS_WORD      ; arg1 word?
+    JZ _ipoa2v_err1_        ; no, error arg1
+    TEST AH, ARGS_WORD      ; arg2 word?
+    JZ _ipoa2v_err2_       ; no, error arg2
     MOV AL, BL
     OR AL, 1
-    CALL EMIT_BYTE                  ; emit the opcode
+    CALL EMIT_BYTE
     MOV AX, WORD PTR [ARG2 + ARG_WORD]
-    JMP EMIT_WORD                   ; and the value
+    JMP EMIT_WORD
+_ipoa2v_err1_:
+    JMP ERROR_INVALID_ARG1
 _ipoa2v_err2_:
+    JMP ERROR_INVALID_ARG2
+
+; Instruction pattern IP_OP_A2PTR_
+; One opcode followed by the pointer in arg2.
+; Arg1 is the accumulator (caller must check);
+; arg2 is a direct pointer (caller must check)
+; Inputs:
+;   AL = arg1's type
+;   AH = arg2's type
+;   BL the opcode
+;   DX the address
+IP_OP_A2PTR_:
+    TEST AL, ARGS_BYTE      ; arg1 byte?
+    JZ _ipoa2p_word_        ; no, try word
+    TEST AH, ARGS_BYTE      ; arg2 byte?
+    JZ _ipoa2p_err2_        ; no, error arg2
+    JMP SHORT _ipoa2p_emit_
+_ipoa2p_word_:
+    TEST AL, ARGS_WORD      ; arg1 word?
+    JZ _ipoa2p_err1_        ; no, error arg1
+    TEST AH, ARGS_WORD      ; arg2 word?
+    JZ _ipoa2p_err2_        ; no, error arg2
+    OR BL, 1
+_ipoa2p_emit_:
+    MOV AL, BL
+    CALL EMIT_BYTE
+    MOV AX, DX
+    JMP EMIT_WORD
+_ipoa2p_err1_:
+    JMP ERROR_INVALID_ARG1
+_ipoa2p_err2_:
     JMP ERROR_INVALID_ARG2
 
 ; Instruction pattern IP_RM_
