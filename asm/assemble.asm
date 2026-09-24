@@ -255,7 +255,7 @@ _pdbs_bytes_:
     MOV AL, [ARG1 + ARG_BYTE]
     CALL EMIT_BYTE                  ; Emit bytes
     LOOP _pdbs_bytes_               ; Until CX is zero
-    JMP _pdbs_epilog_
+    JMP SHORT _pdbs_epilog_
 _pdbs_string_:
     MOV SI, ARG1 + ARG_STRLEN
     CALL EMIT_STRING                ; Emit strings
@@ -295,7 +295,7 @@ _pdws_nums_:
     MOV AX, WORD PTR [ARG1 + ARG_WORD]
     CALL EMIT_WORD              ; Emit words
     LOOP _pdws_nums_            ; Until CX is zero
-    JMP _pdws_epilog_
+    JMP SHORT _pdws_epilog_
 _pdws_string_:
     CMP [ARG1 + ARG_STRLEN], 2
     JNZ _pdws_error_            ; Check that the string has length 2
@@ -339,7 +339,7 @@ _pdds_dwords_:
     MOV DX, WORD PTR [ARG1 + ARG_DWORD + 2]
     CALL EMIT_DWORD                  ; Emit dword
     LOOP _pdds_dwords_               ; Until CX is zero
-    JMP _pdds_epilog_
+    JMP SHORT _pdds_epilog_
 _pdds_string_:
     CMP [ARG1 + ARG_STRLEN], 4
     JNZ _pdds_error_            ; Check that the string has length 4
@@ -437,7 +437,7 @@ _psnum_noprefix_:
     JNZ _psnum_maybe_id_
     MOV AX, WORD PTR [TOKEN + TOKEN_NUMBER]
     XOR DX, DX
-    JMP _psnum_adjust_
+    JMP SHORT _psnum_adjust_
 _psnum_maybe_id_:
     CMP_TOKEN_TYPE TK_IDENTIFIER    ; Identifier?
     JZ _psnum_id_
@@ -495,7 +495,7 @@ _pnumexp_loop_:
     POP BX
     ADD BX, AX
     ADC CL, DL
-    JMP _numexp_label_
+    JMP SHORT _numexp_label_
 _pnumexp_sub_:
     POP CX          ; No; subtract the new DL:AX from the old DL:AX
     POP BX
@@ -594,7 +594,7 @@ PARSE_NUMBER_ARG_:
     JZ _pnumarg_pos_
     CMP AX, -128
     JL _pnumarg_word_
-    JMP _pnumarg_byte_
+    JMP SHORT _pnumarg_byte_
 _pnumarg_pos_:
     CMP AX, 255
     JA _pnumarg_word_
@@ -766,22 +766,22 @@ _pbpa_reg_bx_:
     CMP CH, 0
     JNZ _pbpa_bad_reg_      ; only allow one BX
     MOV CH, 1
-    JMP _pbpa_next_token_
+    JMP SHORT _pbpa_next_token_
 _pbpa_reg_bp_:
     CMP CH, 0
     JNZ _pbpa_bad_reg_      ; only allow one BP
     MOV CH, 2
-    JMP _pbpa_next_token_
+    JMP SHORT _pbpa_next_token_
 _pbpa_reg_si_:
     CMP CL, 0
     JNZ _pbpa_bad_reg_      ; only allow one SI
     MOV CL, 1
-    JMP _pbpa_next_token_
+    JMP SHORT _pbpa_next_token_
 _pbpa_reg_di_:
     CMP CL, 0
     JNZ _pbpa_bad_reg_      ; only allow one DI
     MOV CL, 2
-    JMP _pbpa_next_token_
+    JMP SHORT _pbpa_next_token_
 _pbpa_bad_reg_:
     JMP ERROR_EXPECTED_EA_ONE_REG
 _pbpa_next_token_:
@@ -825,7 +825,7 @@ _pbpa_loop_break_:          ; Done parsing; now make sense of it
     JZ _pbpa_seg_bp_        ; BP? then remove redundant SS
     CMP AL, ASEG_DS         ; And for BX, remove redundant DS
     JNZ _pbpa_noseg_
-    JMP _pbpa_rmseg_
+    JMP SHORT _pbpa_rmseg_
 _pbpa_seg_bp_:
     CMP AL, ASEG_SS
     JNZ _pbpa_noseg_
@@ -849,7 +849,7 @@ _pbpa_noseg_:
     JNZ _pbpa_flagoffset16_
     CMP CX, 0       ; If offset is not zero, flag the offset
     JNZ _pbpa_flagoffset_
-    JMP _pbpa_nooffset_
+    JMP SHORT _pbpa_nooffset_
 _pbpa_flagoffset16_:
     OR AH, EA_OFFSET16
 _pbpa_flagoffset_:
@@ -957,7 +957,7 @@ _pkwarg_maybe_near_:
     JNZ _pkwarg_maybe_near_size_
     OR AL, ARGS_WORD
     MOV BYTE PTR [DI + ARG_TYPE], AL
-    JMP _pkwarg_distance_ret_
+    RET
 _pkwarg_maybe_near_size_:
     TEST AL, ARGS_BYTE
     JNZ _pkwarg_distance_ret_
@@ -969,7 +969,7 @@ _pkwarg_far_:
     JNZ _pkwarg_maybe_far_size_
     OR AL, ARGS_DWORD
     MOV BYTE PTR [DI + ARG_TYPE], AL
-    JMP _pkwarg_distance_ret_
+    RET
 _pkwarg_maybe_far_size_:
     TEST AL, ARGS_DWORD
     JNZ _pkwarg_distance_ret_

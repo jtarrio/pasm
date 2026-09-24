@@ -232,7 +232,7 @@ _lrnum_digit_:
     JE _lrnum_add_
     CMP AL, 'O'         ; = 'O' -> add
     JE _lrnum_add_
-    JMP _lrnum_done_    ; any other -> done
+    JMP SHORT _lrnum_done_    ; any other -> done
 
 _lrnum_maxdigits_ EQU 17
 
@@ -429,7 +429,7 @@ _lrn_read_:
     MOV [LX_C], AL
     INC AL
     MOV [LX_EOF], AL
-    JMP _lrn_ret_
+    RET
 _lrn_getbyte_:
     MOV AL, [LX_BUFFER+BX]  ; Get the next character
     MOV [LX_RAWC], AL       ; Store the next character in LX_RAWC
@@ -465,7 +465,7 @@ _lsws_start_:
     CMP AL, ';'         ; Is semicolon?
     JNZ _lsws_nocomment_
     OR SI, 2            ; Mark SI as is_comment
-    JMP _lsws_next_
+    JMP SHORT _lsws_next_
 _lsws_nocomment_:
     CMP AL, 10          ; Is newline?
     JNZ _lsws_nonewline_
@@ -479,7 +479,7 @@ _lsws_nocomment_:
     POP AX
 _lsws_alreadyeol_:
     MOV SI, 1           ; Mark SI as EOL, remove is_comment
-    JMP _lsws_next_
+    JMP SHORT _lsws_next_
 _lsws_nonewline_:
     CMP AL, ' '         ; Skip space
     JZ _lsws_next_
