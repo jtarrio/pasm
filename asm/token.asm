@@ -33,11 +33,6 @@ TK_NUMBER	    EQU 13
 TK_IDENTIFIER	EQU 14
 TK_STRING	    EQU 15
 
-TOKENS  DB 11, 'end of file', 11, 'end of line', 12, 'left bracket', 13, 'right bracket'
-        DB 16, 'left parenthesis', 17, 'right parenthesis', 9, 'plus sign', 10, 'minus sign'
-        DB 5, 'comma', 5, 'colon', 8, 'register', 7, 'segment'
-        DB 7, 'keyword', 6, 'number', 10, 'identifier', 6, 'string', 0
-
 ; Registers
 REG_AX  EQU 0
 REG_CX  EQU 1
@@ -201,7 +196,7 @@ KW_SUB		EQU 125
 KW_TEST		EQU 126
 KW_WAIT		EQU 127
 KW_XCHG		EQU 128
-KW_XLAT		EQU 129
+KW_XLAT	    EQU 129
 KW_XOR		EQU 130
 
 KEYWORDS    DB 3, 'DUP', 3, 'EQU', 3, 'ORG'
@@ -253,34 +248,6 @@ find_symbol_start_:
 find_symbol_not_found_:
     MOV AX, -1
 find_symbol_found_:
-    RET
-
-; Procedure GET_SYMBOL
-; Returns the name of a symbol, given its index.
-; Inputs:
-;   AX the index (0-based)
-;   ES:DI the symbol table
-; Returns:
-;   DI the symbol's offset, or -1 if not found.
-; Destroys:
-;   AX, CX, flags
-GET_SYMBOL:
-    OR AX, AX
-    JS get_symbol_not_found_
-    XOR CX, CX
-get_symbol_start_:
-    MOV CL, [DI]
-    OR CX, CX
-    JZ get_symbol_not_found_
-    OR AX, AX
-    JZ get_symbol_found_
-    INC CX
-    ADD DI, CX
-    DEC AX
-    JMP get_symbol_start_
-get_symbol_not_found_:
-    MOV DI, -1
-get_symbol_found_:
     RET
 
 ; Procedure TOKEN_LENGTH
