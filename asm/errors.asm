@@ -1,3 +1,8 @@
+ERROR_NO_SOURCE:
+    MOV DX, _em_no_source
+    JMP PRINT_ERROR
+_em_no_source DB 'No source file was specified$'
+
 ERROR_FILE_OPEN_READ:
     MOV DX, _em_file_open_read
     JMP PRINT_ERROR
