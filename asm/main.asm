@@ -70,8 +70,8 @@ _rm_ok_:
     MOV AX, CS          ; Get the segment right after CS
     ADD AX, 1000h
     MOV [LABELSEG], AX  ; and store it in LABELSEG
-    MOV ES, AX          ; Mark the first non-label
-    MOV BYTE PTR ES:[0 + LABEL_TYPE], LBL_NONE
+    MOV ES, AX
+    CALL HASH_PREPARE   ; Initialize the hash table
     ADD AX, 1000h       ; Next segment
     MOV [MACROSEG], AX  ; store it in MACROSEG
     CALL RESET_MACROS

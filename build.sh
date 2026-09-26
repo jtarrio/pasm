@@ -4,6 +4,7 @@ cat \
   asm/pasm.asm \
   asm/token.asm \
   asm/lexer.asm \
+  asm/hashtabl.asm \
   asm/labels.asm \
   asm/macros.asm \
   asm/argument.asm \

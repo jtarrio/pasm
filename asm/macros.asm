@@ -18,7 +18,7 @@ RESET_MACROS:
     PUSH ES
     MOV AX, [MACROSEG]
     MOV ES, AX
-    MOV BYTE PTR ES:[0 + MACRO_TYPE], MAC_NONE
+    CALL HASH_PREPARE
     POP ES
     POP AX
     RET
@@ -36,25 +36,23 @@ START_EQU:
     PUSH SI
     PUSH ES
     PUSHF
-
-    PUSH DS
-    PUSH SI
-    MOV ES, [MACROSEG]  ; Search in the macro segment
-    CALL FIND_EQU_
-    JC _se_add_         ; Add the macro if not found
-    JMP ERROR_DUPLICATE_LABEL
-_se_add_:
-    POP SI
-    POP DS
+    MOV ES, [MACROSEG]      ; We operate on the label segment
+    MOV DL, MACRO_NAMELEN
+    CALL HASH_GET           ; Find the label
+    JNC _se_exists_         ; Error if found
+    CALL HASH_ADD
     MOV BYTE PTR ES:[DI + MACRO_TYPE], MAC_EQU   ; Set the macro type
-    XOR CX, CX                  ; How many chars in the name?
+    XOR CX, CX              ; How many chars in the name?
     MOV CL, DS:[SI]
     INC CX
-    ADD DI, MACRO_NAMELEN       ; Copy the name
+    ADD DI, MACRO_NAMELEN   ; Copy the name
     CLD
     REP MOVSB
-    MOV BYTE PTR ES:[DI], TK_EOF        ; Add an EOF token marker
-    MOV BYTE PTR ES:[DI + 1], MAC_NONE  ; Add a no-macro marker
+    MOV BYTE PTR ES:[DI], TK_EOF    ; Add an EOF token marker
+    MOV WORD PTR ES:[DI + 1], 0     ; Set a null pointer past the token
+    MOV AX, DI
+    ADD AX, 3
+    MOV ES:[0], AX          ; Update the free-memory pointer
     POPF
     POP ES
     POP SI
@@ -62,6 +60,8 @@ _se_add_:
     POP CX
     POP AX
     RET
+_se_exists_:
+    JMP ERROR_DUPLICATE_LABEL
 
 ; Procedure ADD_TOKEN_TO_EQU
 ; Adds the current token to the current EQU
@@ -82,7 +82,10 @@ ADD_TOKEN_TO_EQU:
     CLD
     REP MOVSB                           ; Copy the token
     MOV BYTE PTR ES:[DI], TK_EOF        ; Append an EOF token marker
-    MOV BYTE PTR ES:[DI + 1], MAC_NONE  ; Add a no-macro marker
+    MOV WORD PTR ES:[DI + 1], 0     ; Set a null pointer past the token
+    MOV AX, DI
+    ADD AX, 3
+    MOV ES:[0], AX                      ; Update the free-memory pointer
     POPF
     POP ES
     POP SI
@@ -105,13 +108,18 @@ GET_EQU_FIRST_TOKEN:
     PUSH ES
     PUSH DI
 
-    MOV ES, [MACROSEG]  ; Search in the macro segment
-    CALL FIND_EQU_
+    MOV ES, [MACROSEG]      ; We operate on the label segment
+    MOV DL, MACRO_NAMELEN
+    CALL HASH_GET           ; Find the label
     JC _geft_notfound_
-    PUSH ES             ; Copy ES:DI to DS:SI
-    PUSH DI
-    POP SI
-    POP DS
+    XOR CX, CX
+    MOV CL, ES:[DI + MACRO_NAMELEN]
+    INC CX
+    INC CX
+    ADD DI, CX              ; Advance DI past the macro definition
+    MOV AX, ES
+    MOV DS, AX
+    MOV SI, DI              ; Move ES:DI to DS:SI
 _geft_notfound_:
     POP DI
     POP ES
@@ -143,54 +151,5 @@ GET_EQU_NEXT_TOKEN:
 _gent_ret_:
     POP CX
     POP AX
-    RET
-
-
-; Procedure FIND_EQU_
-; Finds the macro whose name is given in DS:SI
-; Inputs:
-;   DS:SI the position of the length-prefixed macro name
-;   ES the macro segment [MACROSEG]
-; Outputs:
-;   ES:DI the position of the macro's first token, if found
-;   CF unset if found, set if not found
-; Destroys:
-;   AX, CX, ES, DI flags
-FIND_EQU_:
-    XOR DI, DI          ; Start at the first position
-    CLD
-_fe_loop_:
-    CMP BYTE PTR ES:[DI + MACRO_TYPE], MAC_NONE
-    JZ _fe_notfound_
-    XOR CX, CX
-    MOV CL, ES:[DI + MACRO_NAMELEN]
-    INC CX              ; CX has the length of the name and prefix
-    INC DI              ; Pointing DI to the macro's name and prefix
-    PUSH SI
-    REPZ CMPSB          ; Compare
-    JZ _fe_found_
-    ADD DI, CX          ; Now we are pointing at the first token
-    PUSH DS
-    PUSH ES
-    POP DS
-    MOV SI, DI          ; Switch ES:DI and SI:DI so we can measure tokens
-_fe_find_next_token_:
-    CMP BYTE PTR DS:[SI], TK_EOF
-    JZ _fe_found_last_token_
-    CALL TOKEN_LENGTH
-    ADD SI, CX
-    JMP _fe_find_next_token_
-_fe_found_last_token_:
-    INC SI
-    MOV DI, SI
-    POP DS
-    POP SI
-    JMP _fe_loop_
-_fe_found_:
-    POP SI
-    CLC
-    RET
-_fe_notfound_:
-    STC
     RET
 
