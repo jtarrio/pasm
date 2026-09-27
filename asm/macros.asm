@@ -98,7 +98,7 @@ ADD_TOKEN_TO_EQU:
 ; Inputs:
 ;   DS:SI the position of the length-prefixed name
 ; Outputs:
-;   DS:SI the position of the first token, if found
+;   SI the position of the first token in ES, if found
 ;   CF unset if found, set if not found
 ; Destroys:
 ;   Flags
@@ -117,8 +117,6 @@ GET_EQU_FIRST_TOKEN:
     INC CX
     INC CX
     ADD DI, CX              ; Advance DI past the macro definition
-    MOV AX, ES
-    MOV DS, AX
     MOV SI, DI              ; Move ES:DI to DS:SI
 _geft_notfound_:
     POP DI
@@ -130,15 +128,17 @@ _geft_notfound_:
 ; Procedure GET_EQU_NEXT_TOKEN
 ; Returns the address to the next token in the EQU
 ; Inputs:
-;   DS:SI the current token
+;   SI the current token's position
 ; Outputs:
-;   DS:SI the next token, if found
+;   SI the next token's position, if found
 ;   CF unset if found, set if not found
 ; Destroys:
 ;   Flags
 GET_EQU_NEXT_TOKEN:
     PUSH AX
     PUSH CX
+    PUSH DS
+    MOV DS, [MACROSEG]
     CMP BYTE PTR DS:[SI], TK_EOF    ; If EOF, return CF set
     STC
     JZ _gent_ret_
@@ -149,6 +149,7 @@ GET_EQU_NEXT_TOKEN:
     JZ _gent_ret_
     CLC
 _gent_ret_:
+    POP DS
     POP CX
     POP AX
     RET

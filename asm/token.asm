@@ -51,8 +51,70 @@ REG_CH  EQU 13
 REG_DH  EQU 14
 REG_BH  EQU 15
 
-REGISTERS   DB 2, 'AX', 2, 'CX', 2, 'DX', 2, 'BX', 2, 'SP', 2, 'BP', 2, 'SI', 2, 'DI'
-            DB 2, 'AL', 2, 'CL', 2, 'DL', 2, 'BL', 2, 'AH', 2, 'CH', 2, 'DH', 2, 'BH', 0
+; Procedure GET_REGISTER
+; Returns the index of the identifier as a register.
+; Inputs:
+;   DS:SI the symbol (length-prefixed)
+; Returns:
+;   AX the index, if found
+;   CF set if not found, unset otherwise
+; Destroys:
+;   BX, flags
+GET_REGISTER:
+    MOV AL, [SI]
+    CMP AL, 2
+    JNZ _greg_none_
+    MOV AX, [SI + 1]
+    MOV BL, REG_AX
+    CMP AH, 'X'
+    JZ _greg_g_
+    MOV BL, REG_AL
+    CMP AH, 'L'
+    JZ _greg_g_
+    CMP AH, 'I'
+    JZ _greg_i_
+    MOV BL, REG_AH
+    CMP AH, 'H'
+    JZ _greg_g_
+    CMP AH, 'P'
+    JNZ _greg_none_
+    MOV BL, REG_BP
+    CMP AL, 'B'
+    JZ _greg_ret_
+    MOV BL, REG_SP
+    CMP AL, 'S'
+    JZ _greg_ret_
+    JMP SHORT _greg_none_
+_greg_i_:
+    MOV BL, REG_SI
+    CMP AL, 'S'
+    JZ _greg_ret_
+    MOV BL, REG_DI
+    CMP AL, 'D'
+    JZ _greg_ret_
+    JMP SHORT _greg_none_
+_greg_g_:
+    MOV BH, REG_AX
+    CMP AL, 'A'
+    JZ _greg_gret_
+    MOV BH, REG_BX
+    CMP AL, 'B'
+    JZ _greg_gret_
+    MOV BH, REG_CX
+    CMP AL, 'C'
+    JZ _greg_gret_
+    MOV BH, REG_DX
+    CMP AL, 'D'
+    JZ _greg_gret_
+_greg_none_:
+    STC
+    RET
+_greg_gret_:
+    ADD BL, BH
+_greg_ret_:
+    XOR AH, AH
+    MOV AL, BL
+    RET
 
 ; Segments
 SEG_ES  EQU 0
@@ -60,7 +122,39 @@ SEG_CS  EQU 1
 SEG_SS  EQU 2
 SEG_DS  EQU 3
 
-SEGMENTS    DB 2, 'ES', 2, 'CS', 2, 'SS', 2, 'DS', 0
+; Procedure GET_SEGMENT
+; Returns the index of the identifier as a segment.
+; Inputs:
+;   DS:SI the symbol (length-prefixed)
+; Returns:
+;   AX the index, if found
+;   CF set if not found, unset otherwise
+; Destroys:
+;   BX, flags
+GET_SEGMENT:
+    MOV BL, [SI]
+    CMP BL, 2
+    JNZ _gseg_none_
+    MOV BX, [SI + 1]
+    CMP BH, 'S'
+    JNZ _gseg_none_
+    XOR AH, AH
+    MOV AL, SEG_ES
+    CMP BL, 'E'
+    JZ _gseg_ret_
+    MOV AL, SEG_DS
+    CMP BL, 'D'
+    JZ _gseg_ret_
+    MOV AL, SEG_CS
+    CMP BL, 'C'
+    JZ _gseg_ret_
+    MOV AL, SEG_SS
+    CMP BL, 'S'
+    JZ _gseg_ret_
+_gseg_none_:
+    STC
+_gseg_ret_:
+    RET
 
 ; Directives
 KW_DUP		EQU 0
@@ -220,34 +314,45 @@ KEYWORDS    DB 3, 'DUP', 3, 'EQU', 3, 'ORG'
             DB 4, 'WAIT'
             DB 4, 'XCHG', 4, 'XLAT', 3, 'XOR', 0
 
-; Procedure FIND_SYMBOL
-; Finds a symbol name in a table, returning its index.
+; Procedure GET_KEYWORD
+; Returns the index of the identifier as a keyword.
 ; Inputs:
 ;   DS:SI the symbol (length-prefixed)
-;   ES:DI the symbol table
 ; Returns:
-;   AX the index, or -1 if not found
+;   AX the index, if found
+;   CF set if not found, unset otherwise
 ; Destroys:
-;   CX, DX, DI, flags
-FIND_SYMBOL:
+;   BX, CX, DX, DI, flags
+GET_KEYWORD:
     XOR AX, AX  ; Zero the index
-    XOR CX, CX  ; Ensure CH is zero throughout
+    MOV BX, [SI]    ; Length and first character of the symbol
     MOV DX, SI  ; Save the symbol's original position
-find_symbol_start_:
-    MOV CL, [DI]    ; Load the next symbol's length
-    OR CL, CL       ; If zero, we've reached the end of the table
-    JZ find_symbol_not_found_
+    MOV DI, KEYWORDS
     CLD
-    INC CX          ; We will compare the length too, so 1 more byte
+_gk_start_:
+    MOV CX, [DI]    ; Load the next symbol's length and first character
+    OR CL, CL       ; If the length is zero, we've reached the end of the table
+    JZ _gk_not_found_
+    INC DI
+    CMP CX, BX      ; Does it match the length and first character?
+    MOV CH, 0
+    JZ _gk_check_rest_
+_gk_next_:
+    ADD DI, CX      ; Advance to the next symbol in the table
+    INC AX          ; Increment the index
+    JMP _gk_start_
+_gk_check_rest_:
+    DEC CX          ; We have compared the first char
+    INC DI
+    INC SI
+    INC SI
     REPE CMPSB      ; Compare until different or CX=0
     MOV SI, DX      ; Restore the symbol's position
-    JZ find_symbol_found_
-    ADD DI, CX      ; Skip to the next symbol in the table
-    INC AX          ; Increment the index
-    JMP find_symbol_start_
-find_symbol_not_found_:
-    MOV AX, -1
-find_symbol_found_:
+    JZ _gk_found_
+    JMP SHORT _gk_next_
+_gk_not_found_:
+    STC
+_gk_found_:
     RET
 
 ; Procedure TOKEN_LENGTH
@@ -259,17 +364,16 @@ find_symbol_found_:
 ; Destroys:
 ;   AX, flags
 TOKEN_LENGTH:
+    MOV CX, TOKEN_VALUE - TOKEN_TYPE
     MOV AL, [SI + TOKEN_TYPE]
     CMP AL, TK_REGISTER
-    MOV CX, TOKEN_VALUE - TOKEN_TYPE
     JB _tl_havesize_
+    INC CX
     CMP AL, TK_NUMBER
-    MOV CX, 1 + TOKEN_VALUE - TOKEN_TYPE
     JB _tl_havesize_
+    INC CX
     CMP AL, TK_IDENTIFIER
-    MOV CX, 2 + TOKEN_VALUE - TOKEN_TYPE
     JB _tl_havesize_
-    XOR CX, CX
     MOV CL, [SI + TOKEN_STRLEN]
     ADD CX, TOKEN_STR
 _tl_havesize_:

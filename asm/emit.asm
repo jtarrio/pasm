@@ -13,7 +13,7 @@ EMIT_ORG:
     PUSH CX
     MOV BX, [PC]
     CMP BX, 0
-    JZ _eorg_zero_
+    JZ _eorg_zero_  ; If PC is zero, just change it
     CMP BX, AX
     JA _eorg_rewind_
     MOV CX, AX
@@ -220,14 +220,12 @@ WRITE_BYTE_:
     CMP [OUTPUT], 0         ; Skip writes on handler = 0
     JZ _wb_ret_
     CALL WRITE_FLUSH_COND_  ; Flush if necessary
-    PUSHF
     PUSH BX
     MOV BX, [OUT_BUFPOS]    ; BX has the position
 _wb_add_:
     MOV [OUT_BUFFER + BX], AL   ; Write the byte
     INC [OUT_BUFPOS]        ; Increment the position
     POP BX
-    POPF
 _wb_ret_:
     RET
 
@@ -328,11 +326,11 @@ _ws_ret_:
 
 ; Procedure WRITE_FLUSH_COND_
 ; Writes out the content of the buffer if it's full.
+; Destroys:
+;   Flags
 WRITE_FLUSH_COND_:
-    PUSHF
     CMP [OUT_BUFPOS], OUT_BUFSIZE   ; Are we at the end?
-    JB _wfc_ret_
-    CALL WRITE_FLUSH                ; No; flush
-_wfc_ret_:
-    POPF
+    JAE _wfc_flush_
     RET
+_wfc_flush_:
+    JMP WRITE_FLUSH                 ; Yes; flush
