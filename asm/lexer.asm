@@ -1,7 +1,6 @@
 LX_FILE_HANDLE  DW -1           ; File handle for the lexer
 LXC_START:                      ; Start of the lexer context
 LINE            DW 0            ; Current line number
-COL             DW 0            ; Current column number
 TOKEN           DB TOKEN_MAXSIZE DUP(0) ; Current token
 LX_C            DB -1           ; Last read character (uppercase)
 LX_RAWC         DB -1           ; Last read character (raw)
@@ -70,19 +69,15 @@ _ln_from_input_:
     CMP [LX_EOL], 0         ; End of line?
     JNZ _ln_eol_            ; yes, jump
     MOV AX, [LINE]          ; no; set the current position
-    MOV BX, [COL]           ; and clear the token's value
     MOV WORD PTR [TOKEN + TOKEN_LINE], AX
-    MOV WORD PTR [TOKEN + TOKEN_COL], BX
     MOV WORD PTR [TOKEN + TOKEN_NUMBER], 0
     JMP LEXER_READTOKEN_   ; read the next token
 _ln_eol_:
     MOV BYTE PTR [TOKEN + TOKEN_TYPE], TK_EOL
     RET
 _ln_eof_:
-    MOV AX, [LINE]
-    MOV BX, [COL]           ; set the current position
+    MOV AX, [LINE]          ; set the current position
     MOV WORD PTR [TOKEN + TOKEN_LINE], AX
-    MOV WORD PTR [TOKEN + TOKEN_COL], BX
     MOV AL, [TOKEN + TOKEN_TYPE]
     CMP AL, TK_EOL          ; Output EOF if the previous
     JZ _ln_reteof_             ; token was EOL or EOF;
@@ -377,7 +372,6 @@ LEXER_READNEXT_:
     JNZ _lrn_ret_
     CMP [LX_C], 0Ah         ; If LF, increment LINE and reset COL
     JZ _lrn_eol_
-    INC [COL]               ; Increment COL
 _lrn_read_:
     MOV BX, [LX_BUFPOS]     ; Buffer position in BX
     CMP BX, [LX_BUFLEN]     ; If same as length, we need to read a new buffer
@@ -398,7 +392,6 @@ _lrn_ret_:
     RET
 _lrn_eol_:
     INC [LINE]
-    MOV [COL], 1
     JMP SHORT _lrn_read_
 _lrn_readbuffer_:
     MOV AH, 3Fh             ; Read from file
@@ -469,8 +462,6 @@ _lsws_newline_:
     JNZ _lsws_alreadyeol_
     MOV AX, [LINE]      ; Set the token's position before we signal EOL
     MOV WORD PTR [TOKEN + TOKEN_LINE], AX
-    MOV AX, [COL]
-    MOV WORD PTR [TOKEN + TOKEN_COL], AX
 _lsws_alreadyeol_:
     MOV SI, 1           ; Mark SI as EOL, remove is_comment
     JMP SHORT _lsws_next_

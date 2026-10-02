@@ -4,7 +4,7 @@ ARG_BYTE        EQU 1   ; Word (used for num|byte)
 ARG_WORD        EQU 1   ; Word (used for num)
 ARG_DWORD       EQU 1   ; Dword (used for num|dword)
 ARG_OFFSET      EQU 1   ; Word (used for ptr)
-ARG_REGISTER    EQU 3   ; Byte (used for reg)
+ARG_REGISTER    EQU 1   ; Byte (used for reg)
 ARG_SEGMENT     EQU 3   ; Byte (used for seg and ptr)
 ARG_EAMODE      EQU 4   ; Byte (used for ptr)
 ARG_DISTANCE    EQU 5   ; Byte (used for word, dword, and ptr)
@@ -16,10 +16,10 @@ ARG_MAXSIZE     EQU ARG_STR + ARG_STRMAXLEN
 ; Argument types
 ARGT_NONE   EQU 00000000b   ; No argument
 ARGT_NUM    EQU 00000001b   ; Number (byte, word, dword)
-ARGT_STR    EQU 00000010b   ; String
-ARGT_REG    EQU 00000100b   ; Register
-ARGT_SEG    EQU 00001000b   ; Segment
-ARGT_PTR    EQU 00010000b   ; Pointer
+ARGT_REG    EQU 00000010b   ; Register
+ARGT_SEG    EQU 00000100b   ; Segment
+ARGT_PTR    EQU 00001000b   ; Pointer
+ARGT_STR    EQU 00010000b   ; String
 ARGT_MASK   EQU 00011111b
 ; Argument sizes
 ARGS_BYTE   EQU 00100000b   ; Byte

@@ -11,6 +11,13 @@ A homemade DOS assembler for the Intel 8086/8088 processor.
   can run the Go programming language.
 - A not completely terrible assembly language reference is available in [ASSEMBLY.md](ASSEMBLY.md).
 
+## Interested in learning how it works?
+
+The [HOW-IT-WORKS.md](HOW-IT-WORKS.md) file describes all the parts of PASM: lexical analyzer, parser, code generator,
+macro expansion, etc. There is also a [detailed grammar description](GRAMMAR.md).
+
+Let me know if you found them useful!
+
 ## Bootstrapping
 
 On your computer with a Unix-like operating system with the Go programming language installed, execute:

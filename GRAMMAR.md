@@ -41,6 +41,8 @@ This document describes the grammar used by PASM. I will try to keep it up to da
       `01011010B`.
 * _string_: a `'` character (single quote) followed by up to 255 printable ASCII characters (except `'`), followed by a
   closing `'`. Examples: `'Hello!'`, `''` (empty string).
+* _eol_: the end-of-line token, emitted between two lines or between the last line and the end-of-file token.
+* _eof_: the end-of-file token, emitted at the end of the source code.
 
 All characters in tokens (except strings) are converted to upper case during parsing, so they are case insensitive.
 Examples: `byte` is recognized as the keyword `BYTE`, `3Fh` is recognized as the hexadecimal number `3FH`, and the
@@ -68,7 +70,7 @@ start:
     INT 20h     ; Exit
 ```
 
-* source := [line ...] ;
+* source := [ line _eol_ ... ] _eof_ ;
 
 A line may contain an `ORG` directive, a labeled statement, or a statement.
 
@@ -103,96 +105,94 @@ a `DD` keyword followed by a doubleword sequence.
 * dd_statement := `DD` dword_sequence ;
 
 A byte sequence consists of a sequence of byte elements joined with commas. A byte element consists of a string, a
-numeric expression that resolves to an 8-bit number, or a duplicated byte element.
+number expression that resolves to an 8-bit number, or a duplicated byte element.
 
 * byte_sequence := byte_element [ `,` byte_element ...] ;
-* byte_element := _string_ | byte | numeric_expression `DUP` `(` byte_element `)` ;
-* byte := numeric_expression ;
+* byte_element := _string_ | byte | number_expression `DUP` `(` byte_element `)` ;
+* byte := number_expression <8 bits>;
 
 A word sequence consists of a sequence of word elements joined with commas. A word element consists of a 2-character
-string, a numeric expression, or a duplicated word element.
+string, a number expression, or a duplicated word element.
 
 * word_sequence := word_element [ `,` word_element ...] ;
-* word_element := _string_ | word | numeric_expression `DUP` `(` word_element `)` ;
-* word := numeric_expression ;
+* word_element := _string_ | word | number_expression `DUP` `(` word_element `)` ;
+* word := number_expression ;
 
 A doubleword sequence consists of a sequence of doubleword elements joined with commas. A doubleword element consists of
 a 4-character string, two words joined with a colon (`:`), or a duplicated doubleword element.
 
 * dword_sequence := dword_element [ `,` dword_element ...] ;
-* dword_element := _string_ | dword | numeric_expression `DUP` `(` dword_element `)` ;
+* dword_element := _string_ | dword | number_expression `DUP` `(` dword_element `)` ;
 * dword := word `:` word ;
 
 A statement consists of a prefix, an instruction, or a prefix followed by an instruction.
 
 * statement := _prefix_ | instruction | _prefix_ instruction ;
 
-An instruction is a data statement (described above) or an instruction keyword followed by zero arguments, one qualified argument,
+An instruction is a data statement (described above) or an instruction keyword followed by zero arguments, one argument,
 or two arguments joined with a comma (`,`).
 
-* instruction := data_statement | _instruction_ [ qualified_argument ] | _instruction_ argument `,` argument ;
+* instruction := data_statement | _instruction_ [ argument [ `,` argument  ] ] ;
 
-A qualified argument consists of one of the optional distance qualifiers followed by an argument.
+An argument is a register argument, a segment argument, a number argument, a string argument, a keyword argument, or a
+bare pointer argument.
 
-* qualified_argument := [ distance_qualifier ] argument ;
-* distance_qualifier := `SHORT` | `NEAR` | `FAR` ;
-
-An argument is a register argument, a segment argument, a numeric argument, a string argument, or a qualified pointer argument.
-
-* argument := register_argument | segment_argument | numeric_argument | string_argument | qualified_pointer_argument ;
+* argument := register_argument | segment_argument | number_argument | string_argument | keyword_argument |
+  bare_pointer_argument ;
 
 A register argument consists of the name of one of the registers.
 
 * register_argument := _register_ ;
 
-A segment argument consists of the name of one of the segments.
+A segment argument consists of the name of a segment by itself, or the name of a segment followed by a colon (`:`) and a
+bare pointer argument.
 
-* segment_argument := _segment_ ;
+* segment_argument := _segment_ | _segment_ `:` bare_pointer_argument ;
 
-A numeric argument consists of a numeric expression or two numeric expressions joined by a colon (`:`).
+A number argument consists of a number expression that resolves to an 8-bit value, a number expression that resolves to
+a 16-bit value, or two number expressions joined with a colon (`:`).
 
-* numeric_argument := numeric_expression | numeric_expression `:` numeric_expression ;
+* number_argument := number_expression <8 bits> | number_expression <16 bits> | number_expression `:`
+  number_expression ;
 
-A numeric expression consists of a sequence of single numbers joined with plus (`+`) or minus (`-`) signs.
+A number expression consists of a sequence of single numbers joined with plus (`+`) or minus (`-`) signs.
 
-* numeric_expression := single_number | numeric_expression `+` single_number | numeric_expression `-` single_number ;
+* number_expression := single_number | number_expression `+` single_number | number_expression `-` single_number ;
 
 A single number consists of an optional minus sign (`-`) or plus sign (`+`) followed by a label name or a number.
 
 * single_number := [ `-` | `+` ] identifier | [ `-` | `+` ] number ;
 
-A string argument consists of a string token. A single-character string is treated as a 8-bit number representing the character's ASCII value.
+A string argument consists of a string token. A single-character string is treated as an 8-bit number representing the
+character's ASCII value.
 
 * string_argument := _string_ ;
 
-A qualified pointer argument consists of an optional size qualifier followed by a pointer argument.
+A keyword argument consists of a size qualifier followed by a pointer argument or a distance qualifier followed by an
+argument.
 
-* qualified_pointer_argument := [ size_qualifier ] pointer_argument ;
+* keyword_argument := size_qualifier pointer_argument | distance_qualifier argument ;
 * size_qualifier := `BYTE` `PTR` | `WORD` `PTR` | `DWORD` `PTR` ;
+* distance_qualifier := `SHORT` | `NEAR` | `FAR` ;
 
-A pointer argument consists of an optional segment override followed by a bare pointer.
+A pointer argument consists of an optional segment name followed by a colon, in turn followed by a bare pointer
+argument.
 
-* pointer_argument := [ segment_override ] bare_pointer ;
+* pointer_argument := [ _segment_ `:` ] bare_pointer_argument ;
 
-The segment override is the name of a segment followed by a colon.
+A bare pointer argument consists of a left bracket followed by an effective address and a right bracket. The effective
+address is a combination of an optional base register, an optional index register, and an offset. The base register and
+the index register can only be added; the offset can be added or subtracted.
 
-* segment_override := _segment_ `:` ;
-
-The bare pointer consists of an effective address between brackets.
-
-* bare_pointer := `[` effective_address `]` ;
-
-The effective address consists of an expression containing a base register, an index register, and an offset; all
-optional. The base register and index register must be added; the offset may be added or subtracted.
-
+* bare_pointer_argument := `[` effective_address `]` ;
 * effective_address := base_register |
-    index_register |
-    offset |
-    base_register `+` index_register |
-    base_register { `+` | `-` } offset |
-    index_register { `+` | `-` } offset |
-    base_register `+` index_register { `+` | `-` } offset ; /* and all other combinations */
+  index_register |
+  offset |
+  base_register `+` index_register |
+  base_register { `+` | `-` } offset |
+  index_register { `+` | `-` } offset |
+  base_register `+` index_register { `+` | `-` } offset ; /* and all other combinations */
 * base_register := `BX` | `BP` ;
 * index_register := `SI` | `DI` ;
-* offset := numeric_expression ;
+* offset := number_expression ;
 
