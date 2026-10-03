@@ -20,44 +20,29 @@ Let me know if you found them useful!
 
 ## Bootstrapping
 
-On your computer with a Unix-like operating system with the Go programming language installed, execute:
+You will need a computer with a Unix-like operating system and the Go programming language.
+
+Execute the following script:
 
 ```shell
 ./build.sh
 ```
 
-You will get a `pasm.asm` file and a `pasm.com` file in the project's root directory. Copy both to your DOS machine and
-then execute:
+You will get a `pasm.asm` file and a `pasmboot.com` file. This is your first native assembler, built using the bootstrap
+assembler. Now you need to use it to build your native assembler.
+
+Copy `pasm.asm`, `pasmboot.com`, and `bootstrp.bat` to your DOS machine, and then execute:
 
 ```shell
-PASM PASM.ASM PASM2.COM
+BOOTSTRP
 ```
 
-This will generate a `PASM2.COM` file. Finally, build a new version of the assembler:
+This will generate `pasm2.com` (self-hosted assembler) and `pasm.com` (native assembler) and compare them to verify that
+they are identical.
 
-```shell
-PASM2 PASM.ASM PASM3.COM
-```
+Now you can delete `bootstrp.bat`, `pasmboot.com` and `pasm2.com` to keep your assembler and its source code!
 
-You can verify that `PASM2.COM` and `PASM3.COM` are identical using the following command:
-
-```shell
-FC /B PASM2.COM PASM3.COM
-```
-
-The program should return with:
-
-```
-fc: no differences encountered
-```
-
-Now you can get rid of the intermediate steps and keep only the final, built-by-itself assembler:
-
-```shell
-DEL PASM.COM
-DEL PASM2.COM
-REN PASM3.COM PASM.COM
-```
+---
 
 Alternatively, if you live in the year 1986 and you don't have access to a computer from 2026, you can request a
 ready-built copy of `PASM.COM`. Send a SASE with two 3½" floppy disks (one to return, one to keep) to the following

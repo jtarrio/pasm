@@ -15,5 +15,6 @@ cat \
   asm/main.asm \
   asm/errors.asm \
   asm/end.asm \
+| sed 's/$/\r/g' \
 > pasm.asm
-go run ./go/cmd/pasm pasm.asm pasm.com
+go run ./go/cmd/pasm pasm.asm pasmboot.com
