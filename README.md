@@ -5,7 +5,9 @@ A homemade DOS assembler for the Intel 8086/8088 processor.
 ## Features
 
 - Outputs COM files directly. No need to link object files!
-- Only 10 kilobytes! You can fit it and all your programs in a single floppy disk.
+- Less than 10 kilobytes! You can fit it and all your programs in a single floppy disk.
+- All 8086 and 8088 instructions!
+- Some macro functionality in the form of EQUs!
 - Blazing fast! 75 lines per second on an IBM PC-XT!
 - Written in assembly! You can assemble it with itself, or you can bootstrap it using a computer from the future that
   can run the Go programming language.

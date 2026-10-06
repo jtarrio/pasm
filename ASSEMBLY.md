@@ -64,15 +64,21 @@ DW 0FFFFh, 1234     ; outputs 2 words
 DD 0B800h:0000h     ; outputs a double word
 ```
 
+You can also use question marks (`?`) instead of data values. This lets you specify uninitialized data; for example,
+buffers that will be reserved in memory but not written to the program file. This is most useful with the `DUP`
+directive (see below.)
+
 ### `DUP`
 
 In data definition directives, the `DUP` directive outputs multiple copies of the same byte, word, doubleword, or
-string.
+string, or a length of uninitialized data.
 
 Examples:
 
 ```
-buffer DB 1024 DUP (0)  ; outputs 1024 zero bytes
+zeros DB 1024 DUP (0)       ; outputs 1024 zero bytes
+hellos DB 42 DUP ('Hello!') ; outputs 42 copies of the word 'hello!'
+buffer DB 1024 DUP (?)      ; reserves space for a 1024-byte buffer
 ```
 
 ### `EQU`
