@@ -525,7 +525,7 @@ func TestAssemble_Errors(t *testing.T) {
 		{"Duplicate label", "lbl: NOP\nlbl: NOP\n"},
 		{"Byte overflow", "MOV AL, 300\n"},
 		{"DB overflow", "DB 300\n"},
-		{"Backward ORG", "ORG 100h\nNOP\nORG 50h\n"},
+		{"Backward ORG", "ORG 100h\nNOP\nORG 50h\nNOP\n"},
 		{"Mismatch DB label with word register", "b DB 12h\nMOV AX, [b]\n"},
 		{"Mismatch DW label with byte register", "w DW 1234h\nMOV AL, [w]\n"},
 		{"Invalid indirect JMP via DB", "target DB 10h\nJMP [target]\n"},

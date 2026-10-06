@@ -266,7 +266,7 @@ i_noargs_:
     CMP AL, ARGT_NONE
     JNZ _i_noargs_err_
     MOV AL, BYTE PTR [BP]
-    JMP EMIT_BYTE
+    JMP EMIT_BYTE_
 _i_noargs_err_:
     JMP ERROR_UNEXPECTED_ARGUMENT
 
@@ -290,7 +290,7 @@ _i_aamaad_1arg_:
     MOV BH, BYTE PTR [ARG1 + ARG_BYTE]
 _i_aamaad_emit_:
     MOV AX, BX
-    JMP EMIT_WORD
+    JMP EMIT_WORD_
 _i_aamaad_err_:
     JMP ERROR_INVALID_ARG
 
@@ -428,11 +428,11 @@ _i_jmpcall_num_near_:
     CMP BL, DST_NEAR                ; near jump?
     JNZ _i_jmpcall_num_far_         ; no, try far jump
     MOV AL, [BP + 1]                ;
-    CALL EMIT_BYTE
+    CALL EMIT_BYTE_
     MOV AX, WORD PTR [ARG1 + ARG_OFFSET]
     SUB AX, WORD PTR [PC]
     SUB AX, 2                       ; Compute displacement
-    JMP EMIT_WORD
+    JMP EMIT_WORD_
 _i_jmpcall_num_far_:
     ; FAR imm
     CMP BL, DST_FAR                 ; far jump?
@@ -440,10 +440,10 @@ _i_jmpcall_num_far_:
     TEST AL, ARGS_DWORD             ; arg dword?
     JZ _i_jmpcall_err1_             ; no, error
     MOV AL, [BP + 2]
-    CALL EMIT_BYTE
+    CALL EMIT_BYTE_
     MOV AX, WORD PTR [ARG1 + ARG_DWORD]
     MOV DX, WORD PTR [ARG1 + ARG_DWORD + 2]
-    JMP EMIT_DWORD
+    JMP EMIT_DWORD_
 _i_jmpcall_regptr_:
     ; NEAR r/m
     CMP BL, DST_NEAR                ; near jump?
@@ -485,7 +485,7 @@ i_unary_:
     JNZ _i_unary_rm_                ; No, try r/m
     MOV AL, BYTE PTR [BP]
     OR AL, BYTE PTR [ARG1 + ARG_REGISTER]
-    JMP EMIT_BYTE
+    JMP EMIT_BYTE_
 _i_unary_rm_:
     ; r/m
     TEST AL, ARGT_REG + ARGT_PTR    ; arg reg|ptr?
@@ -565,7 +565,7 @@ _i_inout_in_:
 _i_inout_prtimm_byte_:
     MOV AL, BL
     MOV AH, BYTE PTR [DI + ARG_BYTE]
-    JMP EMIT_WORD
+    JMP EMIT_WORD_
 _i_inout_prtdx_:
     CMP AH, ARGT_REG + ARGS_WORD    ; port reg word?
     JNZ _i_inout_err2_              ; no; error port
@@ -577,7 +577,7 @@ _i_inout_prtdx_:
     OR BL, 1
 _i_inout_prtdx_byte_:
     MOV AL, BL
-    JMP EMIT_BYTE
+    JMP EMIT_BYTE_
 _i_inout_badargs_:
     JMP ERROR_EXPECTED_2_ARGUMENTS
 _i_inout_err1_:
@@ -604,11 +604,11 @@ i_interrupt_:
     CMP BL, 3                               ; arg1 == 3?
     JNZ _i_interrupt_any_                   ; no, any interrupt
     MOV AL, [BP]
-    JMP EMIT_BYTE                           ; int3
+    JMP EMIT_BYTE_                           ; int3
 _i_interrupt_any_:
     MOV AL, [BP + 1]
     MOV AH, BL
-    JMP EMIT_WORD
+    JMP EMIT_WORD_
 _i_interrupt_badargs_:
     JMP ERROR_EXPECTED_1_ARGUMENT
 _i_interrupt_err_:
@@ -745,16 +745,16 @@ _i_mov_regimm_:
     MOV AL, [BP + 1]
     OR AL, [ARG1 + ARG_REGISTER]
     MOV AH, [ARG2 + ARG_BYTE]
-    JMP EMIT_WORD
+    JMP EMIT_WORD_
 _i_mov_regimm_word_:
     TEST AH, ARGS_DWORD             ; arg2 dword?
     JNZ _i_mov_err2_                ; yes, error arg2
     MOV AL, [BP + 1]
     OR AL, 8
     OR AL, [ARG1 + ARG_REGISTER]
-    CALL EMIT_BYTE
+    CALL EMIT_BYTE_
     MOV AX, WORD PTR [ARG2 + ARG_WORD]
-    JMP EMIT_WORD
+    JMP EMIT_WORD_
 _i_mov_regptr_:
     ; reg <- ptr
     ; (we already know arg1 reg)
@@ -806,7 +806,7 @@ _i_stack_reg_:
     JZ _i_stack_ptr_        ; no, try ptr
     MOV AL, BYTE PTR [BP]
     OR AL, BYTE PTR [ARG1 + ARG_REGISTER]
-    JMP EMIT_BYTE
+    JMP EMIT_BYTE_
 _i_stack_ptr_:
     TEST AL, ARGT_PTR       ; arg1 ptr?
     JZ _i_stack_seg_        ; no, try seg
@@ -827,7 +827,7 @@ _i_stack_seg_emit_:
     SHL BL, 1
     SHL BL, 1
     OR AL, BL
-    JMP EMIT_BYTE
+    JMP EMIT_BYTE_
 _i_stack_badargs_:
     JMP ERROR_EXPECTED_1_ARGUMENT
 _i_stack_err_:
@@ -882,7 +882,7 @@ i_ret_:
     CMP AL, ARGT_NONE       ; any arguments?
     JNZ _i_ret_1arg_        ; yes, try 1 argument
     MOV AL, [BP]
-    JMP EMIT_BYTE
+    JMP EMIT_BYTE_
 _i_ret_1arg_:
     CMP AH, ARGT_NONE       ; second argument?
     JNZ _i_ret_badargs_     ; yes, error
@@ -891,9 +891,9 @@ _i_ret_1arg_:
     TEST AL, ARGS_DWORD     ; arg1 dword?
     JNZ _i_ret_err_         ; yes, error
     MOV AL, [BP + 1]
-    CALL EMIT_BYTE
+    CALL EMIT_BYTE_
     MOV AX, WORD PTR [ARG1 + ARG_WORD]
-    JMP EMIT_WORD
+    JMP EMIT_WORD_
 _i_ret_badargs_:
     JMP ERROR_EXPECTED_1_ARGUMENT
 _i_ret_err_:
@@ -921,7 +921,7 @@ i_xchg_:
     JNZ _i_xchg_regax_      ; no, try reg <- AX
     MOV AL, BYTE PTR [BP]
     OR AL, BYTE PTR [ARG2 + ARG_REGISTER]
-    JMP EMIT_BYTE
+    JMP EMIT_BYTE_
 _i_xchg_regax_:
     ; reg <- AX
     ; (we know arg1 and arg2 reg word)
@@ -929,7 +929,7 @@ _i_xchg_regax_:
     JNZ _i_xchg_rmreg_      ; no, try reg|ptr <- reg
     MOV AL, BYTE PTR [BP]
     OR AL, BYTE PTR [ARG1 + ARG_REGISTER]
-    JMP EMIT_BYTE
+    JMP EMIT_BYTE_
 _i_xchg_rmreg_:
     ; reg|ptr <- reg
     ; (we know arg2 reg)
@@ -973,7 +973,7 @@ IP_OP_A2VALUE_:
     JZ _ipoa2v_err2_        ; no, error arg2
     MOV AL, BL
     MOV AH, BYTE PTR [ARG2 + ARG_BYTE]
-    JMP EMIT_WORD
+    JMP EMIT_WORD_
 _ipoa2v_word_:
     TEST AL, ARGS_WORD      ; arg1 word?
     JZ _ipoa2v_err1_        ; no, error arg1
@@ -981,9 +981,9 @@ _ipoa2v_word_:
     JNZ _ipoa2v_err2_       ; yes, error arg2
     MOV AL, BL
     OR AL, 1
-    CALL EMIT_BYTE
+    CALL EMIT_BYTE_
     MOV AX, WORD PTR [ARG2 + ARG_WORD]
-    JMP EMIT_WORD
+    JMP EMIT_WORD_
 _ipoa2v_err1_:
     JMP ERROR_INVALID_ARG1
 _ipoa2v_err2_:
@@ -1012,9 +1012,9 @@ _ipoa2p_word_:
     OR BL, 1
 _ipoa2p_emit_:
     MOV AL, BL
-    CALL EMIT_BYTE
+    CALL EMIT_BYTE_
     MOV AX, DX
-    JMP EMIT_WORD
+    JMP EMIT_WORD_
 _ipoa2p_err1_:
     JMP ERROR_INVALID_ARG1
 _ipoa2p_err2_:
@@ -1060,7 +1060,7 @@ _iprm_emit_:
     AND DH, 11000111b       ; Clear the middle bits
     OR BH, DH               ; Add the extension code
     MOV AX, BX
-    CALL EMIT_WORD          ; Emit the opcode and mod/rm bytes
+    CALL EMIT_WORD_          ; Emit the opcode and mod/rm bytes
 
     AND BH, 11000000b       ; Now we emit the offset based on mod
     CMP BH, 11000000b       ; 11 is a register, so no offset
@@ -1074,9 +1074,9 @@ _iprm_emit_:
     JNZ _iprm_ret_          ; If EA mode is not DIRECT, no offset
 
 _iprm_16bitoff_:
-    JMP EMIT_WORD
+    JMP EMIT_WORD_
 _iprm_8bitoff_:
-    JMP EMIT_BYTE
+    JMP EMIT_BYTE_
 _iprm_ret_:
     RET
 
@@ -1148,7 +1148,7 @@ _iprmi_byte1_:
     JZ _iprmi_err2_
     CALL IP_RM_
     MOV AL, BYTE PTR [ARG2 + ARG_BYTE]
-    JMP EMIT_BYTE
+    JMP EMIT_BYTE_
 _iprmi_word1_:
     TEST AH, ARGS_BYTE
     JZ _iprmi_word2_
@@ -1160,7 +1160,7 @@ _iprmi_word1_:
     OR BL, 3
     CALL IP_RM_
     MOV AL, DL
-    JMP EMIT_BYTE
+    JMP EMIT_BYTE_
 _iprmi_word2_:
     TEST AH, ARGS_WORD
     JZ _iprmi_err2_
@@ -1168,7 +1168,7 @@ _iprmi_emit_word_:
     OR BL, 1
     CALL IP_RM_
     MOV AX, WORD PTR [ARG2 + ARG_WORD]
-    JMP EMIT_WORD
+    JMP EMIT_WORD_
 _iprmi_err2_:
     JMP ERROR_INVALID_ARG2
 
@@ -1187,7 +1187,7 @@ IP_SHORTJMP_:
 _ipsj_emit_:
     MOV AH, CL
     MOV AL, BL
-    JMP EMIT_WORD
+    JMP EMIT_WORD_
 _ipsj_err_:
     JMP ERROR_TOO_FAR
 

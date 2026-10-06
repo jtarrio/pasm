@@ -1,80 +1,165 @@
 OUTPUT      DW 0        ; Assembler output handle
 PC          DW 0        ; Program counter
-OUT_BUFSIZE EQU bufsize ; Size of the output buffer
+OC          DW 0        ; Output counter (position of the next write)
+OUT_BUFSIZE EQU 1024    ; Size of the output buffer
 OUT_BUFPOS  DW 0        ; Position in the output buffer
-OUT_BUFFER  EQU output_buffer   ; Output buffer
 
 ; Procedure EMIT_ORG
 ; Inputs:
 ;   AX the new program pointer
 EMIT_ORG:
-    PUSH AX
-    PUSH BX
-    PUSH CX
-    MOV BX, [PC]
-    CMP BX, 0
-    JZ _eorg_zero_  ; If PC is zero, just change it
-    CMP BX, AX
-    JA _eorg_rewind_
-    MOV CX, AX
-    SUB CX, BX
-    MOV AL, 0
-    CALL WRITE_BYTES_
-_eorg_zero_:
-    POP CX
-    POP BX
-    POP AX
+    CMP [PC], 0     ; If PC is not zero, just set it
+    JZ _eorg_zero_
+_eorg_set_:
     MOV [PC], AX
     RET
-_eorg_rewind_:
-    JMP ERROR_ORG_REWIND
+_eorg_zero_:
+    CMP [OC], 0     ; If PC and OC are zero, set OC and PC
+    JNZ _eorg_set_
+    MOV [OC], AX
+    JMP _eorg_set_
+
+; Procedure EMIT_UNDEF
+; Emits undefined bytes
+; Inputs:
+;   CX the nubmer of undefined bytes to emit
+EMIT_UNDEF:
+    ADD [PC], CX
+    RET
 
 ; Procedure EMIT_BYTE
 ; Inputs:
 ;   AL the byte to emit
 EMIT_BYTE:
+    CALL ADJUST_OC_
+EMIT_BYTE_:
     INC [PC]
-    JMP WRITE_BYTE_
+    INC [OC]
+    CMP [OUTPUT], 0         ; Skip writes on handler = 0
+    JZ _eb_ret_
+    PUSH BX
+    MOV BX, [OUT_BUFPOS]
+    CMP BX, OUT_BUFSIZE   ; Are we at the end?
+    JAE _eb_flush_          ; Yes, flush
+_eb_add_:
+    MOV [OUT_BUFFER + BX], AL   ; Write the byte
+    INC BX
+    MOV [OUT_BUFPOS], BX        ; Increment the position
+    POP BX
+_eb_ret_:
+    RET
+_eb_flush_:
+    CALL WRITE_FLUSH
+    XOR BX, BX
+    JMP _eb_add_
 
 ; Procedure EMIT_WORD
 ; Inputs:
 ;   AX the word to emit
 EMIT_WORD:
-    PUSH AX
+    CALL ADJUST_OC_
+EMIT_WORD_:
     ADD [PC], 2
-    CALL WRITE_BYTE_
-    MOV AL, AH
-    CALL WRITE_BYTE_
-    POP AX
+    ADD [OC], 2
+    CMP [OUTPUT], 0         ; Skip writes on handler = 0
+    JZ _ew_ret_
+    PUSH BX
+    MOV BX, [OUT_BUFPOS]    ; BX has the position
+    CMP BX, OUT_BUFSIZE - 1   ; Are we at the end?
+    JAE _ew_flush_          ; Yes, flush
+_ew_add_:
+    MOV WORD PTR [OUT_BUFFER + BX], AX   ; Write the word
+    INC BX                  ; Increment the position
+    INC BX
+    MOV [OUT_BUFPOS], BX
+    POP BX
+_ew_ret_:
     RET
+_ew_flush_:
+    CALL WRITE_FLUSH
+    XOR BX, BX
+    JMP _ew_add_
 
 ; Procedure EMIT_DWORD
 ; Inputs:
 ;   DX:AX the dword to emit
 EMIT_DWORD:
-    PUSH AX
+    CALL ADJUST_OC_
+EMIT_DWORD_:
     ADD [PC], 4
-    CALL WRITE_BYTE_
-    MOV AL, AH
-    CALL WRITE_BYTE_
-    MOV AL, DL
-    CALL WRITE_BYTE_
-    MOV AL, DH
-    CALL WRITE_BYTE_
-    POP AX
+    ADD [OC], 4
+    CMP [OUTPUT], 0         ; Skip writes on handler = 0
+    JZ _edw_ret_
+    PUSH BX
+    MOV BX, [OUT_BUFPOS]    ; BX has the position
+    CMP BX, OUT_BUFSIZE - 3   ; Are we at the end?
+    JAE _edw_flush_          ; Yes, flush
+_edw_add_:
+    MOV WORD PTR [OUT_BUFFER + BX], AX       ; Write the dword
+    MOV WORD PTR [OUT_BUFFER + BX + 2], DX
+    ADD BX, 4               ; Increment the position
+    MOV [OUT_BUFPOS], BX
+    POP BX
+_edw_ret_:
     RET
+_edw_flush_:
+    CALL WRITE_FLUSH
+    XOR BX, BX
+    JMP _edw_add_
 
 ; Procedure EMIT_STRING
 ; Inputs:
 ;   DS:SI the length-prefixed string to emit
 EMIT_STRING:
-    PUSH AX
-    XOR AX, AX
-    MOV AL, [SI]
-    ADD [PC], AX
-    CALL WRITE_STRING_
-    POP AX
+    CALL ADJUST_OC_
+EMIT_STRING_:
+    PUSH BX
+    XOR BX, BX
+    MOV BL, BYTE PTR [SI]   ; Remaining bytes in BX
+    CMP BX, 0               ; No bytes remaining? exit
+    JE _es_ret_
+    ADD [PC], BX
+    ADD [OC], BX
+    CMP [OUTPUT], 0         ; Skip writes on handler = 0
+    JZ _es_ret_
+    PUSH CX
+    PUSH DX
+    PUSH SI
+    PUSH DI
+    PUSH ES
+    PUSH DS
+    POP ES
+    CLD
+    INC SI                  ; SI is the current source position
+_es_loop_:
+    MOV DX, OUT_BUFSIZE
+    SUB DX, [OUT_BUFPOS]    ; DX has the available space in the buffer
+    JBE _es_flush_          ; If no available space, flush
+_es_do_:
+    MOV CX, BX              ; CX is the number of bytes to copy
+    CMP DX, BX              ; If it's more than the available space...
+    JAE _es_noclamp_
+    MOV CX, DX              ; clamp to the available space
+_es_noclamp_:
+    MOV DI, OUT_BUFFER      ; Write to OUT_BUFFER + [OUT_BUFPOS]
+    ADD DI, [OUT_BUFPOS]
+    ADD [OUT_BUFPOS], CX    ; Change the position and remaining
+    SUB BX, CX
+    REP MOVSB               ; Copy the data
+    JNZ _es_loop_
+_es_break_:
+    POP ES
+    POP DI
+    POP SI
+    POP DX
+    POP CX
+_es_ret_:
+    POP BX
     RET
+_es_flush_:
+    CALL WRITE_FLUSH
+    MOV DX, OUT_BUFSIZE
+    JMP _es_do_
 
 ; Procedure EMIT_PREFIX
 ; Inputs:
@@ -108,14 +193,13 @@ _epfx_emit_:
     POP AX
     RET
 
-
-
 ; Procedure EMIT_INSTRUCTION
 ; Inputs:
 ;   AL the keyword of the instruction to emit
 ;   [ARG1] the first argument
 ;   [ARG2] the second argument
 EMIT_INSTRUCTION:
+    CALL ADJUST_OC_
     PUSH AX
     PUSH BX
     MOV BX, ARG1
@@ -159,28 +243,81 @@ _eins_emit_:
 ; Outputs:
 ;   CF set if an override was emitted, unset otherwise
 EMIT_SEGMENT_OVERRIDE_:
+    TEST BYTE PTR [BX + ARG_TYPE], ARGT_PTR
+    JZ _esegovr_ret_
+    TEST BYTE PTR [BX + ARG_EAMODE], EA_SEGMENT
+    JZ _esegovr_ret_
     PUSH AX
-    PUSH CX
-    CLC
-    MOV AL, BYTE PTR [BX + ARG_TYPE]
-    TEST AL, ARGT_PTR
-    JZ _esegovr_ret_
-    MOV AL, BYTE PTR [BX + ARG_EAMODE]
-    TEST AL, EA_SEGMENT
-    JZ _esegovr_ret_
-    AND AL, EA_NOSEGMENT
-    MOV BYTE PTR [BX + ARG_EAMODE], AL
+    AND BYTE PTR [BX + ARG_EAMODE], EA_NOSEGMENT
     MOV AL, [BX + ARG_SEGMENT]
     AND AL, 3
-    MOV CL, 3
-    SHL AL, CL
+    SHL AL, 1
+    SHL AL, 1
+    SHL AL, 1
     OR AL, 00100110b
-    CALL EMIT_BYTE
-    STC
-_esegovr_ret_:
-    POP CX
+    CALL EMIT_BYTE_
     POP AX
+    STC
     RET
+_esegovr_ret_:
+    CLC
+    RET
+
+; Procedure ADJUST_OC_
+; Advances OC up to PC, padding with zeros if necessary.
+ADJUST_OC_:
+    PUSH CX
+    MOV CX, [PC]
+    SUB CX, [OC]
+    JNZ _adjoc_adjust_
+    POP CX
+    RET
+_adjoc_adjust_:
+    JB _adjoc_rewind_
+    ADD [OC], CX
+    CMP [OUTPUT], 0         ; Skip writes on handler = 0
+    JZ _adjoc_ret_
+    PUSH AX
+    PUSH BX
+    PUSH DX
+    PUSH DI
+    PUSH ES
+    PUSH DS
+    POP ES
+    CLD
+    XOR AL, AL
+    MOV BX, CX              ; Remaining bytes in BX
+_adjoc_loop_:
+    MOV DX, OUT_BUFSIZE
+    SUB DX, [OUT_BUFPOS]    ; DX has the available space in the buffer
+    JBE _adjoc_flush_         ; If zero (or less?!?!) flush
+_adjoc_do_:
+    MOV CX, BX              ; CX is the number of bytes to copy
+    CMP DX, BX              ; If it's more than the available space...
+    JAE _adjoc_noclamp_
+    MOV CX, DX
+_adjoc_noclamp_:
+    MOV DI, OUT_BUFFER
+    ADD DI, [OUT_BUFPOS]    ; Write to OUT_BUFFER + [OUT_BUFPOS]
+    ADD [OUT_BUFPOS], CX    ; Change the position and remaining
+    SUB BX, CX
+    REP STOSB               ; Store the data
+    JNZ _adjoc_loop_          ; Loop more if BX is not 0 (from the SUB)
+_adjoc_break_:
+    POP ES
+    POP DI
+    POP DX
+    POP BX
+    POP AX
+_adjoc_ret_:
+    POP CX
+    RET
+_adjoc_flush_:
+    CALL WRITE_FLUSH
+    MOV DX, OUT_BUFSIZE     ; Now all of OUT_BUFSIZE remains in the buffer
+    JMP _adjoc_do_
+_adjoc_rewind_:
+    JMP ERROR_REWIND
 
 ; Procedure WRITE_FLUSH
 ; Writes out the content of the buffer
@@ -212,125 +349,4 @@ _wf_ret_:
 _wf_err_:
     JMP ERROR_WRITE
 
-; Procedure WRITE_BYTE_
-; Writes a byte to the output
-; Inputs:
-;   AL the byte
-WRITE_BYTE_:
-    CMP [OUTPUT], 0         ; Skip writes on handler = 0
-    JZ _wb_ret_
-    CALL WRITE_FLUSH_COND_  ; Flush if necessary
-    PUSH BX
-    MOV BX, [OUT_BUFPOS]    ; BX has the position
-_wb_add_:
-    MOV [OUT_BUFFER + BX], AL   ; Write the byte
-    INC [OUT_BUFPOS]        ; Increment the position
-    POP BX
-_wb_ret_:
-    RET
 
-; Procedure WRITE_BYTES_
-; Writes a stream of bytes to the output
-; Inputs:
-;   AL the byte
-;   CX the number of copies
-WRITE_BYTES_:
-    CMP [OUTPUT], 0         ; Skip writes on handler = 0
-    JZ _wbs_ret_
-    PUSHF
-    PUSH BX
-    PUSH CX
-    PUSH DX
-    PUSH SI
-    PUSH DI
-    PUSH ES
-    PUSH DS
-    POP ES
-    CLD
-    MOV BX, CX              ; Remaining bytes in BX
-_wbs_loop_:
-    CMP BX, 0               ; None remaining? exit
-    JE _wbs_break_
-    CALL WRITE_FLUSH_COND_  ; Flush if necessary
-    MOV DX, OUT_BUFSIZE
-    SUB DX, [OUT_BUFPOS]    ; DX has the available space in the buffer
-    MOV CX, BX              ; CX is the number of bytes to copy
-    CMP DX, BX              ; If it's more than the available space...
-    JAE _wbs_noclamp_
-    MOV CX, DX              ; clamp to the available space
-_wbs_noclamp_:
-    MOV DI, OUT_BUFFER      ; Write to OUT_BUFFER + [OUT_BUFPOS]
-    ADD DI, [OUT_BUFPOS]
-    ADD [OUT_BUFPOS], CX    ; Change the position and remaining
-    SUB BX, CX
-    REP STOSB               ; Store the data
-    JMP _wbs_loop_
-_wbs_break_:
-    POP ES
-    POP DI
-    POP SI
-    POP DX
-    POP CX
-    POP BX
-    POPF
-_wbs_ret_:
-    RET
-
-; Procedure WRITE_STRING_
-; Writes a string to the output
-; Inputs:
-;   DS:SI the length-prefixed string
-WRITE_STRING_:
-    CMP [OUTPUT], 0         ; Skip writes on handler = 0
-    JZ _ws_ret_
-    PUSHF
-    PUSH BX
-    PUSH CX
-    PUSH DX
-    PUSH SI
-    PUSH DI
-    PUSH ES
-    PUSH DS
-    POP ES
-    CLD
-    XOR BX, BX
-    MOV BL, BYTE PTR [SI]   ; Remaining bytes in BX
-    INC SI                  ; SI is the current source position
-_ws_loop_:
-    CMP BX, 0               ; No bytes remaining? exit
-    JE _ws_break_
-    CALL WRITE_FLUSH_COND_  ; Flush if necessary
-    MOV DX, OUT_BUFSIZE
-    SUB DX, [OUT_BUFPOS]    ; DX has the available space in the buffer
-    MOV CX, BX              ; CX is the number of bytes to copy
-    CMP DX, BX              ; If it's more than the available space...
-    JAE _ws_noclamp_
-    MOV CX, DX              ; clamp to the available space
-_ws_noclamp_:
-    MOV DI, OUT_BUFFER      ; Write to OUT_BUFFER + [OUT_BUFPOS]
-    ADD DI, [OUT_BUFPOS]
-    ADD [OUT_BUFPOS], CX    ; Change the position and remaining
-    SUB BX, CX
-    REP MOVSB               ; Copy the data
-    JMP _ws_loop_
-_ws_break_:
-    POP ES
-    POP DI
-    POP SI
-    POP DX
-    POP CX
-    POP BX
-    POPF
-_ws_ret_:
-    RET
-
-; Procedure WRITE_FLUSH_COND_
-; Writes out the content of the buffer if it's full.
-; Destroys:
-;   Flags
-WRITE_FLUSH_COND_:
-    CMP [OUT_BUFPOS], OUT_BUFSIZE   ; Are we at the end?
-    JAE _wfc_flush_
-    RET
-_wfc_flush_:
-    JMP WRITE_FLUSH                 ; Yes; flush

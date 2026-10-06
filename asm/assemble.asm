@@ -1,6 +1,4 @@
 PASS    DB 0    ; Assembler pass
-ARG1    DB ARG_MAXSIZE DUP(0)   ; First argument
-ARG2    DB ARG_MAXSIZE DUP(0)   ; Second argument
 
 ; Procedure ASSEMBLE
 ; Runs one assembly pass
@@ -9,6 +7,7 @@ ARG2    DB ARG_MAXSIZE DUP(0)   ; Second argument
 ASSEMBLE:
     INC [PASS]          ; Start a new pass
     MOV WORD PTR [PC], 0; Reset the program counter
+    MOV WORD PTR [OC], 0; Reset the output counter
     CALL LEXER_RESTART  ; Reset the lexer
     CALL RESET_MACROS   ; Reset the macro table for the pass
     JMP PARSE_SOURCE_   ; Start parsing
@@ -86,7 +85,7 @@ _pls_done_:
     RET
 
 _pls_parse_label_:
-    MOV [LABEL + LABEL_TYPE], LBL_ADDR
+    MOV BYTE PTR [LABEL + LABEL_TYPE], LBL_ADDR
     CALL ADD_LABEL          ; Add an "any address" label
     CALL LEXER_NEXT         ; Next token
     LD_TOKEN_TYPE
@@ -242,7 +241,7 @@ PARSE_DATA_STMT_:
 PARSE_DB_SEQ_:
     MOV DI, ARG1
     CALL CLEAR_ARGUMENT_
-    CALL PARSE_ARGUMENT_        ; Saves the argument in [DI]
+    CALL PARSE_DATA_ARGUMENT_        ; Saves the argument in [DI]
     CALL PARSE_DUP_             ; Puts count in CX, argument in [DI]
     JCXZ _pdbs_epilog_          ; Skip if the count is zero
     MOV AL, [ARG1 + ARG_TYPE]
@@ -250,11 +249,16 @@ PARSE_DB_SEQ_:
     JZ _pdbs_bytes_
     CMP AL, ARGT_STR                ; String?
     JZ _pdbs_string_
+    CMP AL, ARGT_UNDEF              ; Undefined byte?
+    JZ _pdbs_undef_
     JMP ERROR_EXPECTED_BYTE_STRING
 _pdbs_bytes_:
     MOV AL, [ARG1 + ARG_BYTE]
     CALL EMIT_BYTE                  ; Emit bytes
     LOOP _pdbs_bytes_               ; Until CX is zero
+    JMP SHORT _pdbs_epilog_
+_pdbs_undef_:
+    CALL EMIT_UNDEF                 ; Emit undefined bytes
     JMP SHORT _pdbs_epilog_
 _pdbs_string_:
     MOV SI, ARG1 + ARG_STRLEN
@@ -281,28 +285,34 @@ _pdbs_nocomma_:
 PARSE_DW_SEQ_:
     MOV DI, ARG1
     CALL CLEAR_ARGUMENT_
-    CALL PARSE_ARGUMENT_        ; Saves the argument in [DI]
+    CALL PARSE_DATA_ARGUMENT_        ; Saves the argument in [DI]
     CALL PARSE_DUP_             ; Puts count in CX, argument in [DI]
     JCXZ _pdws_epilog_          ; Skip if the count is zero
     MOV AL, [ARG1 + ARG_TYPE]
+    CMP AL, ARGT_UNDEF          ; Undefined?
+    JZ _pdws_undef_
     TEST AL, ARGT_NUM           ; Number?
     JNZ _pdws_nums_
-    TEST AL, ARGT_STR           ; String?
-    JNZ _pdws_string_
+    CMP AL, ARGT_STR            ; String?
+    JZ _pdws_string_
 _pdws_error_:
     JMP ERROR_EXPECTED_WORD
-_pdws_nums_:
-    MOV AX, WORD PTR [ARG1 + ARG_WORD]
-    CALL EMIT_WORD              ; Emit words
-    LOOP _pdws_nums_            ; Until CX is zero
+_pdws_undef_:
+    SHL CX, 1                   ; Emit double undefined bytes
+    CALL EMIT_UNDEF
     JMP SHORT _pdws_epilog_
 _pdws_string_:
-    CMP [ARG1 + ARG_STRLEN], 2
+    CMP BYTE PTR [ARG1 + ARG_STRLEN], 2
     JNZ _pdws_error_            ; Check that the string has length 2
 _pdws_string_loop_:
     MOV SI, ARG1 + ARG_STRLEN
     CALL EMIT_STRING            ; Emit strings
     LOOP _pdws_string_loop_     ; Until CX is zero
+    JMP SHORT _pdws_epilog_
+_pdws_nums_:
+    MOV AX, WORD PTR [ARG1 + ARG_WORD]
+    CALL EMIT_WORD              ; Emit words
+    LOOP _pdws_nums_            ; Until CX is zero
     ; fall through to _pdws_epilog_
 _pdws_epilog_:
     LD_TOKEN_TYPE
@@ -324,7 +334,7 @@ _pdws_nocomma_:
 PARSE_DD_SEQ_:
     MOV DI, ARG1
     CALL CLEAR_ARGUMENT_
-    CALL PARSE_ARGUMENT_        ; Saves the argument in [DI]
+    CALL PARSE_DATA_ARGUMENT_        ; Saves the argument in [DI]
     CALL PARSE_DUP_             ; Puts count in CX, argument in [DI]
     JCXZ _pdds_epilog_          ; Skip if the count is zero
     MOV AL, [ARG1 + ARG_TYPE]
@@ -332,21 +342,28 @@ PARSE_DD_SEQ_:
     JZ _pdds_dwords_
     CMP AL, ARGT_STR                ; String?
     JZ _pdds_string_
+    CMP AL, ARGT_UNDEF              ; Undefined?
+    JZ _pdds_undef_
 _pdds_error_:
     JMP ERROR_EXPECTED_DWORD
-_pdds_dwords_:
-    MOV AX, WORD PTR [ARG1 + ARG_DWORD]
-    MOV DX, WORD PTR [ARG1 + ARG_DWORD + 2]
-    CALL EMIT_DWORD                  ; Emit dword
-    LOOP _pdds_dwords_               ; Until CX is zero
-    JMP SHORT _pdds_epilog_
 _pdds_string_:
-    CMP [ARG1 + ARG_STRLEN], 4
+    CMP BYTE PTR [ARG1 + ARG_STRLEN], 4
     JNZ _pdds_error_            ; Check that the string has length 4
 _pdds_string_loop_:
     MOV SI, ARG1 + ARG_STRLEN
     CALL EMIT_STRING            ; Emit strings
     LOOP _pdds_string_loop_     ; Until CX is zero
+    JMP SHORT _pdds_epilog_
+_pdds_undef_:
+    SHL CX, 1
+    SHL CX, 1                   ; Emit quad undefined
+    CALL EMIT_UNDEF
+    JMP SHORT _pdds_epilog_
+_pdds_dwords_:
+    MOV AX, WORD PTR [ARG1 + ARG_DWORD]
+    MOV DX, WORD PTR [ARG1 + ARG_DWORD + 2]
+    CALL EMIT_DWORD                  ; Emit dword
+    LOOP _pdds_dwords_               ; Until CX is zero
     ; fall through to _pdds_epilog_
 _pdds_epilog_:
     LD_TOKEN_TYPE
@@ -392,7 +409,7 @@ _pdup_loop_:
     CALL LEXER_NEXT             ; Get the next token
     MOV DI, ARG1
     CALL CLEAR_ARGUMENT_
-    CALL PARSE_ARGUMENT_        ; Parse the argument
+    CALL PARSE_DATA_ARGUMENT_   ; Parse the argument
     POP BX
     JMP _pdup_loop_             ; ... and check for DUP again
 _pdup_exit_:
@@ -564,12 +581,46 @@ _parg_table_    DW 2 DUP (ERROR_EXPECTED_ARG)
                 DW PARSE_BARE_PTR_ARG_
                 DW 3 DUP (ERROR_EXPECTED_ARG)
                 DW 2 DUP (PARSE_NUMBER_ARG_)
-                DW 2 DUP (ERROR_EXPECTED_ARG)
+                DW 3 DUP (ERROR_EXPECTED_ARG)
                 DW PARSE_REGISTER_ARG_
                 DW PARSE_SEGMENT_ARG_
                 DW PARSE_KEYWORD_ARG_
                 DW 2 DUP (PARSE_NUMBER_ARG_)
                 DW PARSE_STRING_ARG_
+
+; Procedure PARSE_DATA_ARGUMENT_
+; Parses a data argument
+; Inputs:
+;   DI the location of the buffer to store the argument in
+; Destroys:
+;   AX, BX, CX, DX, SI, flags
+PARSE_DATA_ARGUMENT_:
+    LD_TOKEN_TYPE
+    CMP AL, TK_STRING   ; Tokens above TK_STRING get remapped to EOF
+    JBE _pdatarg_ok_
+    MOV AL, TK_EOF
+_pdatarg_ok_:
+    CBW
+    SHL AX, 1
+    MOV BX, AX          ; Turn the token type into an index
+    JMP [_pdatarg_table_ + BX] ; Jump to the corresponding address
+_pdatarg_table_ DW 6 DUP (ERROR_EXPECTED_ARG)
+                DW 2 DUP (PARSE_NUMBER_ARG_)
+                DW 2 DUP (ERROR_EXPECTED_ARG)
+                DW PARSE_UNDEF_ARG_
+                DW 3 DUP (ERROR_EXPECTED_ARG)
+                DW 2 DUP (PARSE_NUMBER_ARG_)
+                DW PARSE_STRING_ARG_
+
+; Procedure PARSE_UNDEF_ARG_
+; Parses an argument containing an undefined value
+; Inputs:
+;   DI the location of the buffer to store the argument in
+; Destroys:
+;   AX, BX, CX, DX, SI, flags
+PARSE_UNDEF_ARG_:
+    MOV BYTE PTR [DI + ARG_TYPE], ARGT_UNDEF
+    JMP LEXER_NEXT
 
 ; Procedure PARSE_NUMBER_ARG_
 ; Parses an argument containing a number

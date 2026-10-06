@@ -1,13 +1,11 @@
 LX_FILE_HANDLE  DW -1           ; File handle for the lexer
 LXC_START:                      ; Start of the lexer context
 LINE            DW 0            ; Current line number
-TOKEN           DB TOKEN_MAXSIZE DUP(0) ; Current token
 LX_C            DB -1           ; Last read character (uppercase)
 LX_RAWC         DB -1           ; Last read character (raw)
 LX_EOF          DB 0            ; Reached end of file
 LX_EOL          DB 0            ; Reached end of line
-LX_BUFSIZE      EQU bufsize     ; Size of the read buffer
-LX_BUFFER       EQU input_buffer    ; Read buffer
+LX_BUFSIZE      EQU 1024        ; Size of the read buffer
 LX_BUFLEN       DW 0            ; Length of the read buffer
 LX_BUFPOS       DW 0            ; Position in the read buffer
 LX_EQUTOKEN     DW 0            ; Current token in EQU expansion
@@ -147,7 +145,7 @@ _lrt_invalid_char_:
 _lrt_table_ DB 39 DUP (0)
             DB TK_STRING, TK_LPAREN, TK_RPAREN, 0
             DB TK_PLUS, TK_COMMA, TK_MINUS, 0, 0
-            DB 10 DUP (TK_NUMBER), TK_COLON, 6 DUP(0)
+            DB 10 DUP (TK_NUMBER), TK_COLON, 4 DUP(0), TK_QUESTION, 0
             DB 26 DUP (TK_IDENTIFIER)
             DB TK_LBRACKET, 0, TK_RBRACKET, 0, TK_IDENTIFIER, 0
             DB 26 DUP (TK_IDENTIFIER), 133 DUP(0)
@@ -159,7 +157,7 @@ _lrt_table_ DB 39 DUP (0)
 ; Destroys:
 ;   AX, BX, CX, DX, DI, flags
 LEXER_READSTRING_:
-    MOV [TOKEN + TOKEN_TYPE], TK_STRING
+    MOV BYTE PTR [TOKEN + TOKEN_TYPE], TK_STRING
     MOV DI, TOKEN + TOKEN_STR
     CLD
 _lrs_next_:
@@ -235,7 +233,7 @@ _lrnum_toolarge_:
 _lrnum_suffix_done_:
     CALL LEXER_READNEXT_
 _lrnum_done_:
-    MOV [TOKEN + TOKEN_TYPE], TK_NUMBER
+    MOV BYTE PTR [TOKEN + TOKEN_TYPE], TK_NUMBER
     OR DI, DI           ; If zero digits, return zero
     JZ _lrnum_ret_
 
@@ -285,7 +283,7 @@ _lrnum_ret_:
     RET
 _lrnum_invalid_:
     JMP ERROR_INVALID_DIGIT
-_lrnum_digits_    DB _lrnum_maxdigits_ DUP(0)
+_lrnum_digits_    DB _lrnum_maxdigits_ DUP(?)
 _lrnum_maxvalue_  EQU 0FFFFh
 
 ; Procedure LEXER_READIDENTIFIER_

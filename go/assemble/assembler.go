@@ -14,6 +14,7 @@ func Assemble(input parse.Lexer, output io.Writer) error {
 		out:    getByteWriter(output),
 		pass:   1,
 		pc:     0,
+		oc:     0,
 		labels: map[string]label{},
 	}
 
@@ -25,6 +26,7 @@ func Assemble(input parse.Lexer, output io.Writer) error {
 	}
 	asm.pass = 2
 	asm.pc = 0
+	asm.oc = 0
 	if err := asm.parseSource(); err != nil {
 		return err
 	}
@@ -39,6 +41,7 @@ type assembler struct {
 	out    io.ByteWriter
 	pass   int
 	pc     uint16
+	oc     uint16
 	labels map[string]label
 }
 
@@ -238,7 +241,7 @@ func (a *assembler) parseStatement() error {
 func (a *assembler) parseDataSequence(kw parse.Keyword) error {
 	for {
 		var arg argument
-		if err := a.parseArgument(&arg); err != nil {
+		if err := a.parseDataArgument(&arg); err != nil {
 			return err
 		}
 		var dup uint16
@@ -259,6 +262,10 @@ func (a *assembler) parseDataSequence(kw parse.Keyword) error {
 						return err
 					}
 				}
+			} else if arg.argType == argUndef {
+				if err := a.emitUndef(dup); err != nil {
+					return err
+				}
 			} else {
 				return a.errorArg("expected byte or string argument", &arg)
 			}
@@ -275,6 +282,10 @@ func (a *assembler) parseDataSequence(kw parse.Keyword) error {
 						return err
 					}
 				}
+			} else if arg.argType == argUndef {
+				if err := a.emitUndef(dup * 2); err != nil {
+					return err
+				}
 			} else {
 				return a.errorArg("expected word argument", &arg)
 			}
@@ -290,6 +301,10 @@ func (a *assembler) parseDataSequence(kw parse.Keyword) error {
 					if err := a.emitString(arg.string); err != nil {
 						return err
 					}
+				}
+			} else if arg.argType == argUndef {
+				if err := a.emitUndef(dup * 4); err != nil {
+					return err
 				}
 			} else {
 				return a.errorArg("expected dword argument", &arg)
@@ -327,7 +342,7 @@ func (a *assembler) parseDup(arg *argument, dup *uint16) error {
 		if err := a.expectAndNext(parse.LPAREN, "expected left parenthesis"); err != nil {
 			return err
 		}
-		if err := a.parseArgument(arg); err != nil {
+		if err := a.parseDataArgument(arg); err != nil {
 			return err
 		}
 	}
@@ -350,6 +365,24 @@ func (a *assembler) parseArgument(arg *argument) error {
 	default:
 		return a.errorFound("expected an argument")
 	}
+}
+
+func (a *assembler) parseDataArgument(arg *argument) error {
+	switch a.in.Token().Type {
+	case parse.IDENTIFIER, parse.NUMBER, parse.PLUS, parse.MINUS:
+		return a.parseNumberArg(arg)
+	case parse.STRING:
+		return a.parseStringArg(arg)
+	case parse.QUESTION:
+		return a.parseUndefArg(arg)
+	default:
+		return a.errorFound("expected a data argument")
+	}
+}
+
+func (a *assembler) parseUndefArg(arg *argument) error {
+	arg.argType = argUndef
+	return a.in.Next()
 }
 
 func (a *assembler) parseNumberArg(arg *argument) error {

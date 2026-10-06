@@ -1,6 +1,3 @@
-INFILE  DB 80h DUP (0)  ; Input file name
-OUTFILE DB 80h DUP (0)  ; Output file name
-
 main:
     MOV AH, 09h             ; Display the copyright notice
     MOV DX, _main_copyright

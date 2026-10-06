@@ -6,8 +6,37 @@ import (
 	"github.com/jtarrio/pasm/go/parse"
 )
 
+func (a *assembler) catchUp() error {
+	if a.pc == a.oc {
+		return nil
+	}
+	if a.oc > a.pc {
+		return a.error(fmt.Sprintf("tried to write byte at %04Xh before program counter (%04Xh)", a.oc, a.pc))
+	}
+	if a.pass == 1 || a.out == nil {
+		a.oc = a.pc
+		return nil
+	}
+	for a.oc < a.pc {
+		if err := a.out.WriteByte(0); err != nil {
+			return err
+		}
+		a.oc++
+	}
+	return nil
+}
+
+func (a *assembler) emitUndef(count uint16) error {
+	a.pc += count
+	return nil
+}
+
 func (a *assembler) emitByte(b byte) error {
+	if err := a.catchUp(); err != nil {
+		return err
+	}
 	a.pc++
+	a.oc++
 	if a.pass == 1 || a.out == nil {
 		return nil
 	}
@@ -42,16 +71,10 @@ func (a *assembler) emitBytes(b ...byte) error {
 }
 
 func (a *assembler) emitOrg(addr uint16) error {
-	if a.pc == 0 {
-		a.pc = addr
-	} else if a.pc > addr {
-		return a.error(fmt.Sprintf("ORG address (%04Xh) before program counter (%04Xh)", addr, a.pc))
+	if a.pc == 0 && a.oc == 0 {
+		a.oc = addr
 	}
-	for a.pc < addr {
-		if err := a.emitByte(0); err != nil {
-			return err
-		}
-	}
+	a.pc = addr
 	return nil
 }
 

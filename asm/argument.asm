@@ -16,6 +16,7 @@ ARG_MAXSIZE     EQU ARG_STR + ARG_STRMAXLEN
 ; Argument types
 ARGT_NONE   EQU 00000000b   ; No argument
 ARGT_NUM    EQU 00000001b   ; Number (byte, word, dword)
+ARGT_UNDEF  EQU 00000110b   ; Undefined value
 ARGT_REG    EQU 00000010b   ; Register
 ARGT_SEG    EQU 00000100b   ; Segment
 ARGT_PTR    EQU 00001000b   ; Pointer

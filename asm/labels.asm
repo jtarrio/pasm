@@ -15,7 +15,6 @@ LBL_WORDADDR    EQU 3   ; Word address
 LBL_DWORDADDR   EQU 4   ; Dword address
 
 LABELSEG    DW 0    ; The segment where the labels are saved
-LABEL       DB LABEL_MAXSIZE DUP(0) ; The "current" label
 
 ; Procedure ADD_LABEL
 ; Adds the label from LABEL.

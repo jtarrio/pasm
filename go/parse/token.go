@@ -15,6 +15,7 @@ const (
 	MINUS
 	COMMA
 	COLON
+	QUESTION
 	REGISTER
 	SEGMENT
 	KEYWORD
@@ -296,6 +297,8 @@ func (t Token) String() string {
 		return "comma"
 	case COLON:
 		return "colon"
+	case QUESTION:
+		return "question mark"
 	case REGISTER:
 		return fmt.Sprintf("register %s", t.Register.String())
 	case SEGMENT:

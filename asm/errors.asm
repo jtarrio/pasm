@@ -222,10 +222,10 @@ ERROR_INVALID_FAR_TARGET:
     JMP PRINT_ERROR_LINE
 _eim_far_target DB 'Invalid far target$'
 
-ERROR_ORG_REWIND:
-    MOV DX, _em_org_rewind
+ERROR_REWIND:
+    MOV DX, _em_rewind
     JMP PRINT_ERROR_LINE
-_em_org_rewind DB 'Cannot rewind instruction pointer with ORG$'
+_em_rewind DB 'Trying to overwrite already-output code$'
 
 ERROR_INVALID_PREFIX:
     MOV DX, _eim_prefix

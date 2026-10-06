@@ -184,6 +184,10 @@ func (l *lexer) readToken() error {
 		l.token.Type = COLON
 		return l.readNext()
 	}
+	if l.c == '?' {
+		l.token.Type = QUESTION
+		return l.readNext()
+	}
 	if l.c == '\'' {
 		return l.readString()
 	}

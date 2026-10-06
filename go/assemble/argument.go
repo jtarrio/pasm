@@ -125,6 +125,7 @@ const (
 	argReg       argType = 0x3
 	argSeg       argType = 0x4
 	argPtr       argType = 0x5
+	argUndef     argType = 0x06
 	argClassMask         = 0x0f
 
 	sizeByte  argType = 0x10
@@ -146,6 +147,7 @@ var atypes = []string{
 	argPtr | sizeByte:  "byte pointer",
 	argPtr | sizeWord:  "word pointer",
 	argPtr | sizeDword: "dword pointer",
+	argUndef:           "undefined",
 }
 
 func (a argType) Class() argType {
