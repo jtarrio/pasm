@@ -44,7 +44,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	lexer, err := parse.NewLexer(in)
+	lexer, err := parse.NewLexer(in, input)
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err.Error())
 		_ = in.Close()

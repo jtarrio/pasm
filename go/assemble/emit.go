@@ -18,7 +18,7 @@ func (a *assembler) catchUp() error {
 		return nil
 	}
 	for a.oc < a.pc {
-		if err := a.out.WriteByte(0); err != nil {
+		if err := a.out.WriteByte(0x90); err != nil {
 			return err
 		}
 		a.oc++
@@ -75,6 +75,19 @@ func (a *assembler) emitOrg(addr uint16) error {
 		a.oc = addr
 	}
 	a.pc = addr
+	return nil
+}
+
+func (a *assembler) emitAlign(alignment uint16) error {
+	if alignment < 1 || alignment&(alignment-1) != 0 {
+		return a.error("alignment must be a positive power of 2")
+	}
+	mod := a.pc & (alignment - 1)
+	if mod == 0 {
+		return nil
+	}
+	pad := alignment - mod
+	a.pc += pad
 	return nil
 }
 

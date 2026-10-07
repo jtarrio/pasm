@@ -82,8 +82,10 @@ func (s Segment) String() string {
 type Keyword uint8
 
 const (
-	DUP Keyword = iota
+	ALIGN Keyword = iota
+	DUP
 	EQU
+	INCLUDE
 	ORG
 
 	BYTE
@@ -220,7 +222,7 @@ const (
 )
 
 var Keywords = []string{
-	"DUP", "EQU", "ORG",
+	"ALIGN", "DUP", "EQU", "INCLUDE", "ORG",
 
 	"BYTE", "DWORD", "FAR", "NEAR", "PTR", "SHORT", "WORD",
 
@@ -272,7 +274,6 @@ type Token struct {
 	Number     uint16
 	Str        string
 	Line       uint
-	Col        uint
 }
 
 func (t Token) String() string {

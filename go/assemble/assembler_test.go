@@ -3,6 +3,7 @@ package assemble_test
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
@@ -12,20 +13,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func assembleString(t *testing.T, src string) ([]byte, error) {
+func assembleString(t *testing.T, src string, options ...assemble.Option) ([]byte, error) {
 	t.Helper()
-	lex, err := parse.NewLexer(strings.NewReader(src))
+	lex, err := parse.NewLexer(strings.NewReader(src), "test.asm")
 	if err != nil {
 		return nil, err
 	}
 	var buf bytes.Buffer
-	err = assemble.Assemble(lex, &buf)
+	err = assemble.Assemble(lex, &buf, options...)
 	return buf.Bytes(), err
 }
 
 func assertAssemble(t *testing.T, src, expectedHex string) {
 	t.Helper()
-	out, err := assembleString(t, src)
+	assertAssembleWithOptions(t, src, expectedHex)
+}
+
+func assertAssembleWithOptions(t *testing.T, src, expectedHex string, options ...assemble.Option) {
+	t.Helper()
+	out, err := assembleString(t, src, options...)
 	require.NoError(t, err, "assembling: %q", src)
 	if len(out) == 0 {
 		assert.Equal(t, "", strings.TrimSpace(expectedHex), "assembling: %q", src)
@@ -36,9 +42,9 @@ func assertAssemble(t *testing.T, src, expectedHex string) {
 	assert.Equal(t, wantHex, gotHex, "assembling: %q", src)
 }
 
-func assertAssembleError(t *testing.T, src string) {
+func assertAssembleError(t *testing.T, src string, options ...assemble.Option) {
 	t.Helper()
-	_, err := assembleString(t, src)
+	_, err := assembleString(t, src, options...)
 	assert.Error(t, err, "expected error for: %q", src)
 }
 
@@ -46,10 +52,63 @@ func TestAssemble_DirectivesAndData(t *testing.T) {
 	t.Run("ORG and Whitespace", func(t *testing.T) {
 		assertAssemble(t, "ORG 100h\nNOP\n", "90")
 		assertAssemble(t, "ORG 0\nNOP\n", "90")
-		assertAssemble(t, "ORG 100h\nNOP\nORG 105h\nNOP\n", "90 00 00 00 00 90")
+		assertAssemble(t, "ORG 100h\nNOP\nORG 105h\nNOP\n", "90 90 90 90 90 90")
 		assertAssemble(t, "", "")
 		assertAssemble(t, "; only comments\n", "")
 		assertAssemble(t, "\n\n; comment\n\n", "")
+	})
+
+	t.Run("ALIGN", func(t *testing.T) {
+		assertAssemble(t, "ORG 100h\nALIGN 2\nNOP\n", "90")
+		assertAssemble(t, "ORG 100h\nALIGN 4\nNOP\n", "90")
+		assertAssemble(t, "ORG 100h\nALIGN 1\nNOP\n", "90")
+		assertAssemble(t, "ORG 100h\nNOP\nALIGN 2\nNOP\n", "90 90 90")
+		assertAssemble(t, "ORG 100h\nNOP\nALIGN 4\nNOP\n", "90 90 90 90 90")
+		assertAssemble(t, "ORG 100h\nNOP\nALIGN 4\n", "90")
+	})
+
+	t.Run("INCLUDE", func(t *testing.T) {
+		memFiles := map[string]string{
+			"inc.asm":           "NOP\n",
+			"no_newline.asm":    "NOP",
+			"empty.asm":         "",
+			"comments.asm":      "; only a comment\n",
+			"nested_a.asm":      "INCLUDE 'nested_b.asm'\nCLI\n",
+			"nested_b.asm":      "NOP\n",
+			"with_label.asm":    "target: NOP\n",
+			"with_equ.asm":      "MYVAL EQU 42h\n",
+			"subdir/sub.asm":    "INCLUDE 'helper.asm'\n",
+			"subdir/helper.asm": "HLT\n",
+		}
+		openFn := assemble.WithOpenFileFunction(func(name string) (io.Reader, error) {
+			if content, ok := memFiles[name]; ok {
+				return strings.NewReader(content), nil
+			}
+			return nil, fmt.Errorf("file not found: %s", name)
+		})
+
+		// Basic include
+		assertAssembleWithOptions(t, "MOV AX, 1\nINCLUDE 'inc.asm'\nMOV BX, 2\n", "B8 01 00 90 BB 02 00", openFn)
+
+		// Included file without trailing newline
+		assertAssembleWithOptions(t, "INCLUDE 'no_newline.asm'\nHLT\n", "90 F4", openFn)
+
+		// Empty include and comments-only include
+		assertAssembleWithOptions(t, "NOP\nINCLUDE 'empty.asm'\nNOP\n", "90 90", openFn)
+		assertAssembleWithOptions(t, "NOP\nINCLUDE 'comments.asm'\nNOP\n", "90 90", openFn)
+
+		// Nested includes
+		assertAssembleWithOptions(t, "STI\nINCLUDE 'nested_a.asm'\nHLT\n", "FB 90 FA F4", openFn)
+
+		// Labels across includes
+		assertAssembleWithOptions(t, "JMP SHORT target\nINCLUDE 'with_label.asm'\n", "EB 00 90", openFn)
+		assertAssembleWithOptions(t, "start:\nINCLUDE 'inc.asm'\nJMP start\n", "90 EB FD", openFn)
+
+		// EQU defined in include used in main file
+		assertAssembleWithOptions(t, "INCLUDE 'with_equ.asm'\nMOV AL, MYVAL\n", "B0 42", openFn)
+
+		// Relative path resolution in subdirectories
+		assertAssembleWithOptions(t, "INCLUDE 'subdir/sub.asm'\n", "F4", openFn)
 	})
 
 	t.Run("LineEndings_CRLF", func(t *testing.T) {
@@ -542,6 +601,12 @@ func TestAssemble_Errors(t *testing.T) {
 		{"Nested DUP missing right parenthesis", "DB 2 DUP(3 DUP(1)\n"},
 		{"DUP with empty parentheses", "DB 5 DUP()\n"},
 		{"DUP without count", "DB DUP(0)\n"},
+		{"ALIGN without count", "ALIGN\n"},
+		{"Invalid alignment 0", "ALIGN 0\n"},
+		{"INCLUDE without file name", "INCLUDE\n"},
+		{"INCLUDE with number instead of string", "INCLUDE 123\n"},
+		{"INCLUDE with trailing tokens", "INCLUDE 'foo.inc' extra\n"},
+		{"INCLUDE missing file", "INCLUDE 'nonexistent.asm'\n"},
 	}
 
 	for _, tc := range tests {

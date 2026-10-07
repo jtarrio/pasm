@@ -39,7 +39,7 @@ func (e *errReader) Seek(offset int64, whence int) (int64, error) { return 0, e.
 
 func TestNewLexer_NonByteReader(t *testing.T) {
 	input := "MOV AX, 123"
-	lexer, err := parse.NewLexer(&nonByteReader{r: strings.NewReader(input)})
+	lexer, err := parse.NewLexer(&nonByteReader{r: strings.NewReader(input)}, "test.asm")
 	require.NoError(t, err)
 	require.NotNil(t, lexer)
 
@@ -51,14 +51,14 @@ func TestNewLexer_NonByteReader(t *testing.T) {
 
 func TestNewLexer_InitialReadError(t *testing.T) {
 	expectedErr := errors.New("read failed")
-	lexer, err := parse.NewLexer(&errReader{err: expectedErr})
+	lexer, err := parse.NewLexer(&errReader{err: expectedErr}, "test.asm")
 	assert.ErrorIs(t, err, expectedErr)
 	assert.Nil(t, lexer)
 }
 
 func TestLexer_PunctuationAndTokens(t *testing.T) {
 	input := "[ ] ( ) + - , :"
-	lexer, err := parse.NewLexer(strings.NewReader(input))
+	lexer, err := parse.NewLexer(strings.NewReader(input), "test.asm")
 	require.NoError(t, err)
 
 	expected := []parse.TokenType{
@@ -87,7 +87,7 @@ func TestLexer_PunctuationAndTokens(t *testing.T) {
 
 func TestLexer_CaseInsensitivityAndSymbols(t *testing.T) {
 	input := "mov Mov MOV ax Ax AX cs Cs CS my_var MY_VAR"
-	lexer, err := parse.NewLexer(strings.NewReader(input))
+	lexer, err := parse.NewLexer(strings.NewReader(input), "test.asm")
 	require.NoError(t, err)
 
 	// Keywords (MOV)
@@ -126,7 +126,7 @@ func TestLexer_CaseInsensitivityAndSymbols(t *testing.T) {
 func TestLexer_Strings(t *testing.T) {
 	t.Run("Valid String Case Preservation", func(t *testing.T) {
 		input := "'Hello, World!' '' '123 ABC xyz'"
-		lexer, err := parse.NewLexer(strings.NewReader(input))
+		lexer, err := parse.NewLexer(strings.NewReader(input), "test.asm")
 		require.NoError(t, err)
 
 		require.NoError(t, lexer.Next())
@@ -147,7 +147,7 @@ func TestLexer_Strings(t *testing.T) {
 
 	t.Run("Unclosed String EOF Error", func(t *testing.T) {
 		input := "'unclosed string"
-		lexer, err := parse.NewLexer(strings.NewReader(input))
+		lexer, err := parse.NewLexer(strings.NewReader(input), "test.asm")
 		require.NoError(t, err)
 
 		err = lexer.Next()
@@ -167,7 +167,7 @@ func TestLexer_Strings(t *testing.T) {
 
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
-				lexer, err := parse.NewLexer(strings.NewReader(tc.input))
+				lexer, err := parse.NewLexer(strings.NewReader(tc.input), "test.asm")
 				require.NoError(t, err)
 
 				err = lexer.Next()
@@ -217,7 +217,7 @@ func TestLexer_Numbers(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			lexer, err := parse.NewLexer(strings.NewReader(tc.input))
+			lexer, err := parse.NewLexer(strings.NewReader(tc.input), "test.asm")
 			require.NoError(t, err)
 
 			err = lexer.Next()
@@ -235,7 +235,7 @@ func TestLexer_Numbers(t *testing.T) {
 
 func TestLexer_LineAndColumnTracking(t *testing.T) {
 	input := "MOV AX, 1\n; comment\n  ADD BX, 2"
-	lexer, err := parse.NewLexer(strings.NewReader(input))
+	lexer, err := parse.NewLexer(strings.NewReader(input), "test.asm")
 	require.NoError(t, err)
 
 	// Line 1: MOV AX, 1
@@ -243,25 +243,21 @@ func TestLexer_LineAndColumnTracking(t *testing.T) {
 	tok := lexer.Token()
 	assert.Equal(t, parse.MOV, tok.Keyword)
 	assert.Equal(t, uint(1), tok.Line)
-	assert.Equal(t, uint(1), tok.Col)
 
 	require.NoError(t, lexer.Next())
 	tok = lexer.Token()
 	assert.Equal(t, parse.AX, tok.Register)
 	assert.Equal(t, uint(1), tok.Line)
-	assert.Equal(t, uint(5), tok.Col)
 
 	require.NoError(t, lexer.Next())
 	tok = lexer.Token()
 	assert.Equal(t, parse.COMMA, tok.Type)
 	assert.Equal(t, uint(1), tok.Line)
-	assert.Equal(t, uint(7), tok.Col)
 
 	require.NoError(t, lexer.Next())
 	tok = lexer.Token()
 	assert.Equal(t, uint16(1), tok.Number)
 	assert.Equal(t, uint(1), tok.Line)
-	assert.Equal(t, uint(9), tok.Col)
 
 	// Newline -> EOL token
 	require.NoError(t, lexer.Next())
@@ -273,31 +269,27 @@ func TestLexer_LineAndColumnTracking(t *testing.T) {
 	tok = lexer.Token()
 	assert.Equal(t, parse.ADD, tok.Keyword)
 	assert.Equal(t, uint(3), tok.Line)
-	assert.Equal(t, uint(3), tok.Col)
 
 	require.NoError(t, lexer.Next())
 	tok = lexer.Token()
 	assert.Equal(t, parse.BX, tok.Register)
 	assert.Equal(t, uint(3), tok.Line)
-	assert.Equal(t, uint(7), tok.Col)
 
 	require.NoError(t, lexer.Next())
 	tok = lexer.Token()
 	assert.Equal(t, parse.COMMA, tok.Type)
 	assert.Equal(t, uint(3), tok.Line)
-	assert.Equal(t, uint(9), tok.Col)
 
 	require.NoError(t, lexer.Next())
 	tok = lexer.Token()
 	assert.Equal(t, uint16(2), tok.Number)
 	assert.Equal(t, uint(3), tok.Line)
-	assert.Equal(t, uint(11), tok.Col)
 }
 
 func TestLexer_CommentsAndWhitespace(t *testing.T) {
 	t.Run("Trailing Comment Without Newline", func(t *testing.T) {
 		input := "NOP ; trailing comment without newline"
-		lexer, err := parse.NewLexer(strings.NewReader(input))
+		lexer, err := parse.NewLexer(strings.NewReader(input), "test.asm")
 		require.NoError(t, err)
 
 		require.NoError(t, lexer.Next())
@@ -316,7 +308,7 @@ func TestLexer_CommentsAndWhitespace(t *testing.T) {
 
 	t.Run("Only Comments", func(t *testing.T) {
 		input := "; comment line 1\n; comment line 2"
-		lexer, err := parse.NewLexer(strings.NewReader(input))
+		lexer, err := parse.NewLexer(strings.NewReader(input), "test.asm")
 		require.NoError(t, err)
 
 		require.NoError(t, lexer.Next())
@@ -329,7 +321,7 @@ func TestLexer_AdversarialAndBreakCases(t *testing.T) {
 	t.Run("Invalid Characters", func(t *testing.T) {
 		invalidChars := []string{"@", "$", "#", "~", "\\", "\""}
 		for _, ch := range invalidChars {
-			lexer, err := parse.NewLexer(strings.NewReader(ch))
+			lexer, err := parse.NewLexer(strings.NewReader(ch), "test.asm")
 			if err != nil {
 				assert.ErrorContains(t, err, "invalid character")
 			} else {
@@ -341,7 +333,7 @@ func TestLexer_AdversarialAndBreakCases(t *testing.T) {
 
 	t.Run("UTF-8 Multi-byte Characters", func(t *testing.T) {
 		input := "€"
-		lexer, err := parse.NewLexer(strings.NewReader(input))
+		lexer, err := parse.NewLexer(strings.NewReader(input), "test.asm")
 		if err != nil {
 			assert.ErrorContains(t, err, "invalid character")
 		} else {
@@ -351,7 +343,7 @@ func TestLexer_AdversarialAndBreakCases(t *testing.T) {
 	})
 
 	t.Run("Repeated Next Calls After EOF", func(t *testing.T) {
-		lexer, err := parse.NewLexer(strings.NewReader(""))
+		lexer, err := parse.NewLexer(strings.NewReader(""), "test.asm")
 		require.NoError(t, err)
 
 		for range 5 {
@@ -363,7 +355,7 @@ func TestLexer_AdversarialAndBreakCases(t *testing.T) {
 	t.Run("Read Error Mid Token", func(t *testing.T) {
 		readErr := errors.New("mid-stream failure")
 		r := &failingAfterNReader{data: []byte("MOV 'unclosed"), failAt: 5, err: readErr}
-		lexer, err := parse.NewLexer(r)
+		lexer, err := parse.NewLexer(r, "test.asm")
 		if err != nil {
 			assert.ErrorIs(t, err, readErr)
 			return
@@ -426,7 +418,7 @@ func (f *failingAfterNReader) Seek(offset int64, whence int) (int64, error) {
 
 func TestLexer_Equ(t *testing.T) {
 	t.Run("single token substitution", func(t *testing.T) {
-		lexer, err := parse.NewLexer(strings.NewReader("MOV AX, CONST"))
+		lexer, err := parse.NewLexer(strings.NewReader("MOV AX, CONST"), "test.asm")
 		require.NoError(t, err)
 
 		require.NoError(t, lexer.AddEqu("CONST", []parse.Token{{Type: parse.NUMBER, Number: 42}}))
@@ -457,7 +449,7 @@ func TestLexer_Equ(t *testing.T) {
 	})
 
 	t.Run("multi-token substitution", func(t *testing.T) {
-		lexer, err := parse.NewLexer(strings.NewReader("MOV MEM, 1"))
+		lexer, err := parse.NewLexer(strings.NewReader("MOV MEM, 1"), "test.asm")
 		require.NoError(t, err)
 
 		tokens := []parse.Token{
@@ -499,7 +491,7 @@ func TestLexer_Equ(t *testing.T) {
 	})
 
 	t.Run("multiple equs in sequence", func(t *testing.T) {
-		lexer, err := parse.NewLexer(strings.NewReader("MOV DEST, SRC"))
+		lexer, err := parse.NewLexer(strings.NewReader("MOV DEST, SRC"), "test.asm")
 		require.NoError(t, err)
 
 		require.NoError(t, lexer.AddEqu("DEST", []parse.Token{{Type: parse.REGISTER, Register: parse.AX}}))
@@ -528,7 +520,7 @@ func TestLexer_Equ(t *testing.T) {
 	})
 
 	t.Run("empty equ is skipped mid-statement", func(t *testing.T) {
-		lexer, err := parse.NewLexer(strings.NewReader("MOV EMPTY AX"))
+		lexer, err := parse.NewLexer(strings.NewReader("MOV EMPTY AX"), "test.asm")
 		require.NoError(t, err)
 
 		require.NoError(t, lexer.AddEqu("EMPTY", nil))
@@ -554,7 +546,7 @@ func TestLexer_Equ(t *testing.T) {
 	})
 
 	t.Run("empty equ at EOL", func(t *testing.T) {
-		lexer, err := parse.NewLexer(strings.NewReader("MOV AX EMPTY\nNOP"))
+		lexer, err := parse.NewLexer(strings.NewReader("MOV AX EMPTY\nNOP"), "test.asm")
 		require.NoError(t, err)
 
 		require.NoError(t, lexer.AddEqu("EMPTY", nil))
@@ -582,7 +574,7 @@ func TestLexer_Equ(t *testing.T) {
 	})
 
 	t.Run("restart clears equs", func(t *testing.T) {
-		lexer, err := parse.NewLexer(strings.NewReader("CONST"))
+		lexer, err := parse.NewLexer(strings.NewReader("CONST"), "test.asm")
 		require.NoError(t, err)
 
 		require.NoError(t, lexer.AddEqu("CONST", []parse.Token{{Type: parse.NUMBER, Number: 99}}))
@@ -599,12 +591,91 @@ func TestLexer_Equ(t *testing.T) {
 	})
 
 	t.Run("duplicate equ name error", func(t *testing.T) {
-		lexer, err := parse.NewLexer(strings.NewReader(""))
+		lexer, err := parse.NewLexer(strings.NewReader(""), "test.asm")
 		require.NoError(t, err)
 
 		require.NoError(t, lexer.AddEqu("FOO", nil))
 		err = lexer.AddEqu("FOO", nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "FOO is already defined as an EQU")
+	})
+}
+
+type testCloserReader struct {
+	io.Reader
+	closed bool
+}
+
+func (c *testCloserReader) Close() error {
+	c.closed = true
+	return nil
+}
+
+func TestLexer_Include(t *testing.T) {
+	t.Run("basic include and token streaming", func(t *testing.T) {
+		lexer, err := parse.NewLexer(strings.NewReader("MOV AX, 1\n"), "main.asm")
+		require.NoError(t, err)
+		assert.Equal(t, "main.asm", lexer.Filename())
+
+		require.NoError(t, lexer.Next()) // MOV
+		require.NoError(t, lexer.Next()) // AX
+		require.NoError(t, lexer.Next()) // ,
+		require.NoError(t, lexer.Next()) // 1
+		require.NoError(t, lexer.Next()) // EOL
+
+		require.NoError(t, lexer.Include(strings.NewReader("NOP\n"), "sub.inc"))
+		assert.Equal(t, "sub.inc", lexer.Filename())
+
+		require.NoError(t, lexer.Next()) // NOP
+		assert.Equal(t, parse.KEYWORD, lexer.Token().Type)
+		assert.Equal(t, parse.NOP, lexer.Token().Keyword)
+		assert.Equal(t, uint(1), lexer.Token().Line)
+
+		require.NoError(t, lexer.Next()) // EOL for NOP
+		assert.Equal(t, parse.EOL, lexer.Token().Type)
+
+		require.NoError(t, lexer.Next()) // EOL before EOF of main.asm
+		assert.Equal(t, parse.EOL, lexer.Token().Type)
+		assert.Equal(t, "main.asm", lexer.Filename())
+
+		require.NoError(t, lexer.Next()) // EOF of main.asm
+		assert.Equal(t, parse.EOF, lexer.Token().Type)
+	})
+
+	t.Run("closes reader on pop", func(t *testing.T) {
+		lexer, err := parse.NewLexer(strings.NewReader("NOP\n"), "main.asm")
+		require.NoError(t, err)
+
+		closer := &testCloserReader{Reader: strings.NewReader("HLT\n")}
+		require.NoError(t, lexer.Include(closer, "inc.asm"))
+		assert.False(t, closer.closed)
+
+		for {
+			require.NoError(t, lexer.Next())
+			if lexer.Token().Type == parse.EOF {
+				break
+			}
+		}
+		assert.True(t, closer.closed)
+	})
+
+	t.Run("restart validation", func(t *testing.T) {
+		lexer, err := parse.NewLexer(strings.NewReader("NOP\n"), "main.asm")
+		require.NoError(t, err)
+
+		// Cannot restart mid-stream
+		err = lexer.Restart()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "can only restart at EOF")
+
+		// Consume through EOF
+		for {
+			require.NoError(t, lexer.Next())
+			if lexer.Token().Type == parse.EOF {
+				break
+			}
+		}
+		require.NoError(t, lexer.Restart())
+		assert.Equal(t, "main.asm", lexer.Filename())
 	})
 }

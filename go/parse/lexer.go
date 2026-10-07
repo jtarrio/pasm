@@ -16,30 +16,44 @@ type Lexer interface {
 	Next() error
 	Token() Token
 	AddEqu(name string, tokens []Token) error
+	Include(r io.Reader, filename string) error
+	Filename() string
 }
 
-func NewLexer(r io.ReadSeeker) (Lexer, error) {
-	out := &lexer{r: r}
+func NewLexer(r io.ReadSeeker, filename string) (Lexer, error) {
+	out := &lexer{r: r, filename: filename}
 	if err := out.start(); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
+type includeFile struct {
+	in       io.ByteReader
+	filename string
+	line     uint
+	c        byte
+	rawc     byte
+}
+
 type lexer struct {
-	r          io.ReadSeeker
-	in         io.ByteReader
-	c          byte
-	rawc       byte
-	eof        bool
-	line       uint
-	col        uint
-	token      Token
-	equs       map[string][]Token
-	currentEqu []Token
+	r            io.ReadSeeker
+	in           io.ByteReader
+	filename     string
+	c            byte
+	rawc         byte
+	eof          bool
+	line         uint
+	token        Token
+	equs         map[string][]Token
+	currentEqu   []Token
+	includeStack []includeFile
 }
 
 func (l *lexer) Restart() error {
+	if !l.eof || len(l.includeStack) > 0 {
+		return l.error("can only restart at EOF")
+	}
 	if _, err := l.r.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
@@ -47,16 +61,11 @@ func (l *lexer) Restart() error {
 }
 
 func (l *lexer) start() error {
-	*l = lexer{r: l.r, line: 1, col: 0, equs: map[string][]Token{}}
-	if br, ok := l.r.(io.ByteReader); ok {
-		l.in = br
-	} else {
-		l.in = bufio.NewReader(l.r)
-	}
+	*l = lexer{r: l.r, in: getByteReader(l.r), filename: l.filename, line: 1, equs: map[string][]Token{}}
 	if err := l.readNext(); err != nil {
 		return err
 	}
-	if _, _, _, err := l.skipWhitespace(); err != nil {
+	if _, _, err := l.skipWhitespace(); err != nil {
 		return err
 	}
 	return nil
@@ -68,9 +77,6 @@ func (l *lexer) readNext() error {
 	}
 	if l.c == '\n' {
 		l.line++
-		l.col = 1
-	} else {
-		l.col++
 	}
 	b, err := l.in.ReadByte()
 	if errors.Is(err, io.EOF) {
@@ -88,32 +94,29 @@ func (l *lexer) readNext() error {
 	return nil
 }
 
-func (l *lexer) skipWhitespace() (eol bool, eolLine, eolCol uint, err error) {
+func (l *lexer) skipWhitespace() (eol bool, eolLine uint, err error) {
 	eol = false
 	eolLine = 0
-	eolCol = 0
 	comment := false
 	for {
 		if l.eof {
 			if !eol {
 				eolLine = l.line
-				eolCol = l.col
 			}
-			return true, eolLine, eolCol, nil
+			return true, eolLine, nil
 		} else if l.c == ';' {
 			comment = true
 		} else if l.c == '\n' {
 			if !eol {
 				eolLine = l.line
-				eolCol = l.col
 				eol = true
 			}
 			comment = false
 		} else if !comment && l.c != ' ' && l.c != '\t' && l.c != '\r' {
-			return eol, eolLine, eolCol, nil
+			return eol, eolLine, nil
 		}
 		if err := l.readNext(); err != nil {
-			return false, 0, 0, err
+			return false, 0, err
 		}
 	}
 }
@@ -127,23 +130,35 @@ func (l *lexer) Next() error {
 
 	if l.eof {
 		l.token.Line = l.line
-		l.token.Col = l.col
 		if l.token.Type != EOL && l.token.Type != EOF {
 			l.token.Type = EOL
+			return nil
+		} else if len(l.includeStack) > 0 {
+			if rc, ok := l.in.(io.ReadCloser); ok {
+				_ = rc.Close()
+			}
+			top := l.includeStack[len(l.includeStack)-1]
+			l.includeStack = l.includeStack[:len(l.includeStack)-1]
+			l.in = top.in
+			l.filename = top.filename
+			l.line = top.line
+			l.c = top.c
+			l.rawc = top.rawc
+			l.eof = false
 		} else {
 			l.token.Type = EOF
+			return nil
 		}
-		return nil
 	}
-	eol, eolLine, eolCol, err := l.skipWhitespace()
+	eol, eolLine, err := l.skipWhitespace()
 	if err != nil {
 		return err
 	}
 	if eol {
-		l.token = Token{Type: EOL, Line: eolLine, Col: eolCol}
+		l.token = Token{Type: EOL, Line: eolLine}
 		return nil
 	}
-	l.token = Token{Line: l.line, Col: l.col}
+	l.token = Token{Line: l.line}
 	return l.readToken()
 }
 
@@ -330,7 +345,7 @@ func (l *lexer) readIdentifier() error {
 }
 
 func (l *lexer) error(msg string) error {
-	return fmt.Errorf("%d:%d: %s", l.line, l.col, msg)
+	return fmt.Errorf("%s:%d: %s", l.filename, l.line, msg)
 }
 
 func (l *lexer) Token() Token {
@@ -351,4 +366,39 @@ func (l *lexer) findEqu(name string) bool {
 		return true
 	}
 	return false
+}
+
+func (l *lexer) Include(r io.Reader, filename string) error {
+	l.includeStack = append(l.includeStack, includeFile{in: l.in, filename: l.filename, line: l.line, c: l.c, rawc: l.rawc})
+	l.in = getByteReader(r)
+	l.filename = filename
+	l.line = 1
+	l.c = 0
+	l.rawc = 0
+	l.eof = false
+	if err := l.readNext(); err != nil {
+		return err
+	}
+	_, _, err := l.skipWhitespace()
+	return err
+}
+
+func (l *lexer) Filename() string {
+	return l.filename
+}
+
+func getByteReader(r io.Reader) io.ByteReader {
+	br, ok := r.(io.ByteReader)
+	if !ok {
+		br = bufio.NewReader(r)
+	}
+	if rc, ok := r.(io.ReadCloser); ok {
+		br = &byteReaderCloser{br, rc}
+	}
+	return br
+}
+
+type byteReaderCloser struct {
+	io.ByteReader
+	io.ReadCloser
 }

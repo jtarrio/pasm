@@ -4,18 +4,25 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/jtarrio/pasm/go/parse"
 )
 
-func Assemble(input parse.Lexer, output io.Writer) error {
+func Assemble(input parse.Lexer, output io.Writer, options ...Option) error {
 	asm := assembler{
-		in:     input,
-		out:    getByteWriter(output),
-		pass:   1,
-		pc:     0,
-		oc:     0,
-		labels: map[string]label{},
+		in:         input,
+		out:        getByteWriter(output),
+		pass:       1,
+		pc:         0,
+		oc:         0,
+		labels:     map[string]label{},
+		openFileFn: osOpen,
+	}
+
+	for _, opt := range options {
+		opt(&asm)
 	}
 
 	if err := asm.parseSource(); err != nil {
@@ -36,13 +43,26 @@ func Assemble(input parse.Lexer, output io.Writer) error {
 	return nil
 }
 
+type Option func(*assembler)
+
+func WithOpenFileFunction(openFn func(name string) (io.Reader, error)) Option {
+	return func(a *assembler) {
+		a.openFileFn = openFn
+	}
+}
+
+func osOpen(name string) (io.Reader, error) {
+	return os.Open(name)
+}
+
 type assembler struct {
-	in     parse.Lexer
-	out    io.ByteWriter
-	pass   int
-	pc     uint16
-	oc     uint16
-	labels map[string]label
+	in         parse.Lexer
+	out        io.ByteWriter
+	pass       int
+	pc         uint16
+	oc         uint16
+	labels     map[string]label
+	openFileFn func(name string) (io.Reader, error)
 }
 
 type label struct {
@@ -97,10 +117,16 @@ func (a *assembler) parseLine() error {
 	case parse.IDENTIFIER:
 		return a.parseLabeledStatement()
 	case parse.KEYWORD:
-		if token.Keyword == parse.ORG {
+		switch token.Keyword {
+		case parse.ALIGN:
+			return a.parseAlignDirective()
+		case parse.INCLUDE:
+			return a.parseIncludeDirective()
+		case parse.ORG:
 			return a.parseOrgDirective()
+		default:
+			return a.parseStatement()
 		}
-		return a.parseStatement()
 	default:
 		return a.errorFound("expected label or keyword")
 	}
@@ -154,6 +180,41 @@ func (a *assembler) parseLabeledStatement() error {
 	default:
 		return a.errorFound("expected colon, DB, DW, DD, or EQU")
 	}
+}
+
+func (a *assembler) parseAlignDirective() error {
+	if err := a.nextAndExpect(parse.NUMBER, "expected number"); err != nil {
+		return err
+	}
+	if err := a.emitAlign(a.in.Token().Number); err != nil {
+		return err
+	}
+	return a.in.Next()
+}
+
+func (a *assembler) parseIncludeDirective() error {
+	if err := a.nextAndExpect(parse.STRING, "expected file name"); err != nil {
+		return err
+	}
+	name := a.in.Token().Str
+	if err := a.nextAndExpect(parse.EOL, "expected end of line"); err != nil {
+		return err
+	}
+
+	if !filepath.IsAbs(name) {
+		dir := filepath.Dir(a.in.Filename())
+		fullName := filepath.Join(dir, name)
+		file, err := a.openFileFn(fullName)
+		if err == nil {
+			return a.in.Include(file, fullName)
+		}
+	}
+	//goland:noinspection GoResourceLeak
+	file, err := a.openFileFn(name)
+	if err == nil {
+		return a.in.Include(file, name)
+	}
+	return a.error(fmt.Sprintf("could not read include file \"%s\"", name))
 }
 
 func (a *assembler) parseOrgDirective() error {
@@ -719,13 +780,13 @@ func (a *assembler) expectAndNext(tokenType parse.TokenType, msg string) error {
 }
 
 func (a *assembler) error(msg string) error {
-	return fmt.Errorf("%d:%d: %s", a.in.Token().Line, a.in.Token().Col, msg)
+	return fmt.Errorf("%d: %s", a.in.Token().Line, msg)
 }
 
 func (a *assembler) errorFound(msg string) error {
-	return fmt.Errorf("%d:%d: %s; found %s", a.in.Token().Line, a.in.Token().Col, msg, a.in.Token())
+	return fmt.Errorf("%d: %s; found %s", a.in.Token().Line, msg, a.in.Token())
 }
 
 func (a *assembler) errorArg(msg string, arg *argument) error {
-	return fmt.Errorf("%d:%d: %s; found %s", a.in.Token().Line, a.in.Token().Col, msg, arg)
+	return fmt.Errorf("%d: %s; found %s", a.in.Token().Line, msg, arg)
 }
