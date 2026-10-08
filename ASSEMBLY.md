@@ -49,6 +49,36 @@ Sets the starting address of the program, or pads the program to the given addre
 
 For example, DOS COM files start with the directive `ORG 100h` so that they are assembled starting at position 100h.
 
+### `ALIGN`
+
+Pads the program so the next instruction or data will be at an address that's a multiple of the argument.
+
+The alignment must be a positive number that is a power of 2 (1, 2, 4, 8, 16, etc.)
+
+Example:
+
+```
+JMP SHORT main  ; 00h: 2 bytes
+ALIGN 8         ; 02h: 6 bytes of padding
+DB 'Hello'      ; 08h: 5 bytes
+ALIGN 4         ; 0Ch: 3 bytes of padding
+main:           ; 10h
+```
+
+### `INCLUDE`
+
+Causes another source file to be read and inserted at the position of the directive. The argument is a string that
+contains a file name. If the file name is relative, it is read from the same directory as the current file. If the
+file cannot be found there or the file name is not relative, it is read directly.
+
+Included files may also use `INCLUDE`.
+
+Example:
+
+```
+INCLUDE 'defines.asm'
+```
+
 ### `DB`, `DW`, `DD`
 
 Data definition directives. They define bytes, words, and doublewords, respectively, that are output directly to the

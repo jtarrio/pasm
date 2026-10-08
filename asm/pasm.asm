@@ -1,6 +1,6 @@
 ORG 100h
 
-version EQU '0.1'
+version EQU '0.3'
 
 JMP MAIN
 
@@ -218,6 +218,23 @@ INCLUDE 'errors.asm'
 INFILE  DB 80h DUP (?)  ; Input file name
 OUTFILE DB 80h DUP (?)  ; Output file name
 
+LXIC_START:             ; Start of the include context
+LX_FILE_HANDLE  DW ?            ; File handle for the lexer
+FILENAME_LEN    DB ?
+FILENAME        DB 256 DUP (?)  ; Current file's name
+LINE            DW ?            ; Current line number
+LXC_START:                  ; Start of the zeroable lexer context
+LX_C            DB ?            ; Last read character (uppercase)
+LX_RAWC         DB ?            ; Last read character (raw)
+LX_EOF          DB ?            ; Reached end of file
+LXIC_END:               ; End of the include context
+LX_EOL          DB ?            ; Reached end of line
+LX_BUFLEN       DW ?            ; Length of the read buffer
+LX_BUFPOS       DW ?            ; Position in the read buffer
+LX_EQUTOKEN     DW ?            ; Current token in EQU expansion
+LXC_END:                    ; End of the zeroable lexer context
+INCLUDE_TOP     DW ?            ; The top of the include stack
+
 TOKEN   DB TOKEN_MAXSIZE DUP (?)    ; Current token
 LABEL   DB LABEL_MAXSIZE DUP (?)    ; The "current" label
 
@@ -227,3 +244,4 @@ ARG2    DB ARG_MAXSIZE DUP (?)  ; Second argument
 LX_BUFFER   DB LX_BUFSIZE DUP (?)   ; Lexer's input buffer
 OUT_BUFFER  DB OUT_BUFSIZE DUP (?)  ; Assembler's output buffer
 
+INCLUDE_STACK:          ; The include stack starts here

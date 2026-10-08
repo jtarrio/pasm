@@ -11,7 +11,7 @@ This document describes the grammar used by PASM. I will try to keep it up to da
   and `SP`.
 * _segment_: the name of a segment: `CS`, `DS`, `ES`, `SS`.
 * The following reserved keywords:
-    * `DUP`, `EQU`, `ORG`
+    * `ALIGN`, `DUP`, `EQU`, `INCLUDE`, `ORG`
     * `BYTE`, `WORD`, `DWORD`, `SHORT`, `NEAR`, `FAR`, `PTR`
     * `DB`, `DW`, `DD`
 * _prefix_: any of the following reserved keywords:
@@ -74,11 +74,11 @@ start:
 
 A line may contain an `ORG` directive, a labeled statement, or a statement.
 
-* line := org_directive | labeled_statement | statement ;
+* line := directive | labeled_statement | statement ;
 
-An `ORG` directive consists of the `ORG` keyword followed by a 16-bit number.
+A directive is an `ALIGN` directive, an `INCLUDE` directive, or an `ORG` directive.
 
-* org_directive := `ORG` _number_ ;
+* directive := `ALIGN` _number_ | `INCLUDE` _string_ | `ORG` _number_ ;
 
 A labeled statement consists of an `EQU` definition, a label definition, or a labeled data definition.
 

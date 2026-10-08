@@ -780,13 +780,13 @@ func (a *assembler) expectAndNext(tokenType parse.TokenType, msg string) error {
 }
 
 func (a *assembler) error(msg string) error {
-	return fmt.Errorf("%d: %s", a.in.Token().Line, msg)
+	return fmt.Errorf("%s:%d: %s", a.in.Filename(), a.in.Token().Line, msg)
 }
 
 func (a *assembler) errorFound(msg string) error {
-	return fmt.Errorf("%d: %s; found %s", a.in.Token().Line, msg, a.in.Token())
+	return fmt.Errorf("%s:%d: %s; found %s", a.in.Filename(), a.in.Token().Line, msg, a.in.Token())
 }
 
 func (a *assembler) errorArg(msg string, arg *argument) error {
-	return fmt.Errorf("%d: %s; found %s", a.in.Token().Line, msg, arg)
+	return fmt.Errorf("%s:%d: %s; found %s", a.in.Filename(), a.in.Token().Line, msg, arg)
 }

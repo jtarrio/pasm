@@ -47,16 +47,16 @@ _pui16_lo_:
 ; Procedure PRINT_STR
 ; Prints out a length-prefixed string
 ; Inputs:
-;   DI length-prefixed string to print
+;   SI length-prefixed string to print
 PRINT_STR:
     PUSH AX
     PUSH BX
     PUSH CX
     PUSH DX
     XOR CX, CX
-    MOV CL, [DI]
+    MOV CL, [SI]
     JCXZ _ps_ret_
-    MOV DX, DI
+    MOV DX, SI
     MOV AH, 40h
     MOV BX, 1
     INC DX

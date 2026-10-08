@@ -33,7 +33,7 @@ Execute the following script:
 You will get a `pasm.asm` file and a `pasmboot.com` file. This is your first native assembler, built using the bootstrap
 assembler. Now you need to use it to build your native assembler.
 
-Copy `pasm.asm`, `pasmboot.com`, and `bootstrp.bat` to your DOS machine, and then execute:
+Copy `pasmboot.com`, `bootstrp.bat`, and all the files in the `asm/` directory to your DOS machine, and then execute:
 
 ```shell
 BOOTSTRP

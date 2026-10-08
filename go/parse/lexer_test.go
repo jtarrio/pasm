@@ -642,6 +642,17 @@ func TestLexer_Include(t *testing.T) {
 		assert.Equal(t, parse.EOF, lexer.Token().Type)
 	})
 
+	t.Run("included file starting with newlines tracks line correctly", func(t *testing.T) {
+		lexer, err := parse.NewLexer(strings.NewReader("NOP\n"), "main.asm")
+		require.NoError(t, err)
+
+		require.NoError(t, lexer.Include(strings.NewReader("\n\n\nHLT\n"), "sub.inc"))
+		require.NoError(t, lexer.Next()) // First token in sub.inc: HLT
+		assert.Equal(t, parse.KEYWORD, lexer.Token().Type)
+		assert.Equal(t, parse.HLT, lexer.Token().Keyword)
+		assert.Equal(t, uint(4), lexer.Token().Line)
+	})
+
 	t.Run("closes reader on pop", func(t *testing.T) {
 		lexer, err := parse.NewLexer(strings.NewReader("NOP\n"), "main.asm")
 		require.NoError(t, err)

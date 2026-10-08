@@ -79,6 +79,9 @@ func TestAssemble_DirectivesAndData(t *testing.T) {
 			"with_equ.asm":      "MYVAL EQU 42h\n",
 			"subdir/sub.asm":    "INCLUDE 'helper.asm'\n",
 			"subdir/helper.asm": "HLT\n",
+			"leading_newlines.asm": "\n\n\nNOP\n",
+			"crlf_newlines.asm":    "\r\n\r\n\r\nNOP\r\n",
+			"only_newlines.asm":    "\n\n\n\n",
 		}
 		openFn := assemble.WithOpenFileFunction(func(name string) (io.Reader, error) {
 			if content, ok := memFiles[name]; ok {
@@ -89,6 +92,11 @@ func TestAssemble_DirectivesAndData(t *testing.T) {
 
 		// Basic include
 		assertAssembleWithOptions(t, "MOV AX, 1\nINCLUDE 'inc.asm'\nMOV BX, 2\n", "B8 01 00 90 BB 02 00", openFn)
+
+		// Included file with leading newlines (LF and CRLF)
+		assertAssembleWithOptions(t, "INCLUDE 'leading_newlines.asm'\n", "90", openFn)
+		assertAssembleWithOptions(t, "INCLUDE 'crlf_newlines.asm'\n", "90", openFn)
+		assertAssembleWithOptions(t, "NOP\nINCLUDE 'only_newlines.asm'\nHLT\n", "90 F4", openFn)
 
 		// Included file without trailing newline
 		assertAssembleWithOptions(t, "INCLUDE 'no_newline.asm'\nHLT\n", "90 F4", openFn)

@@ -122,6 +122,11 @@ ERROR_EXPECTED_NUMBER_LABEL:
     JMP PRINT_ERROR_LINE
 _eem_numlbl DB 'Expected a number or label$'
 
+ERROR_EXPECTED_STRING:
+    MOV DX, _eem_str
+    JMP PRINT_ERROR_LINE
+_eem_str DB 'Expected a string$'
+
 ERROR_EXPECTED_BYTE_STRING:
     MOV DX, _eem_byte_str
     JMP PRINT_ERROR_LINE
@@ -305,6 +310,11 @@ PRINT_ERROR_LINE_:
     CMP WORD PTR [TOKEN + TOKEN_LINE], 0
     JZ PRINT_ERROR
     PUSH DX
+    MOV SI, FILENAME_LEN
+    CALL PRINT_STR
+    MOV AH, 02h
+    MOV DL, ':'
+    INT 21h
     MOV AX, WORD PTR [TOKEN + TOKEN_LINE]
     CALL PRINT_UINT16_DEC
     MOV AH, 09h

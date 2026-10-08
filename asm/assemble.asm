@@ -48,9 +48,17 @@ PARSE_LINE_:
     JZ PARSE_LABELED_STMT_  ; Yes -> labeled statement
     CMP AL, TK_KEYWORD      ; Keyword?
     JNZ _pline_invalid_
-    CMP_TOKEN_VALUE KW_ORG  ;   Keyword is ORG?
-    JZ _pline_org_          ;   Yes -> ORG directive
-    JMP PARSE_STATEMENT_    ;   Other -> statement
+    CMP_TOKEN_VALUE KW_ALIGN    ; Keyword is ALIGN?
+    JZ _pline_align_            ; Yes -> ALIGN directive
+    CMP_TOKEN_VALUE KW_INCLUDE  ; Keyword is INCLUDE?
+    JZ _pline_include_          ; Yes -> INCLUDE directive
+    CMP_TOKEN_VALUE KW_ORG      ; Keyword is ORG?
+    JZ _pline_org_              ; Yes -> ORG directive
+    JMP PARSE_STATEMENT_        ; Other -> statement
+_pline_align_:
+    JMP PARSE_ALIGN_DIRECTIVE_
+_pline_include_:
+    JMP PARSE_INCLUDE_DIRECTIVE_
 _pline_org_:
     JMP PARSE_ORG_DIRECTIVE_
 _pline_invalid_:
@@ -117,6 +125,110 @@ _pls_found_data_:
     MOV [LABEL + LABEL_TYPE], BL
     CALL ADD_LABEL
     JMP PARSE_DATA_STMT_
+
+; Procedure PARSE_ALIGN_DIRECTIVE_
+; Parses an ALIGN directive
+; Destroys:
+;   AX, BX, CX, DX, SI, DI, flags
+PARSE_ALIGN_DIRECTIVE_:
+    CALL LEXER_NEXT
+    CMP_TOKEN_TYPE TK_NUMBER    ; Number?
+    JNZ _palign_nonum_
+    MOV AX, WORD PTR [TOKEN + TOKEN_NUMBER]
+    CALL EMIT_ALIGN             ; Yes, emit an ALIGN
+    JMP LEXER_NEXT              ; Get next token and return
+_palign_nonum_:
+    JMP ERROR_EXPECTED_NUMBER
+
+; Procedure PARSE_INCLUDE_DIRECTIVE_
+; Parses an INCLUDE directive
+; Destroys:
+;   AX, BX, CX, DX, SI, DI, ES, flags
+PARSE_INCLUDE_DIRECTIVE_:
+    CALL LEXER_NEXT
+    CMP_TOKEN_TYPE TK_STRING    ; String?
+    JNZ _pinclude_nostr_
+    CALL LEXER_NEXT
+    CMP_TOKEN_TYPE TK_EOL       ; EOL?
+    JNZ _pinclude_noeol_
+    PUSH DS
+    POP ES
+    ; First, check if the string contains a non-relative filename
+    MOV SI, TOKEN + TOKEN_STRLEN
+    MOV CL, [SI]
+    INC SI
+    CMP BYTE PTR [SI], '\'      ; Is the first char a backslash?
+    JZ _pinclude_non_rel_       ; Yes; non-relative
+    CMP CL, 2
+    JB _pinclude_rel_
+    CMP BYTE PTR [SI + 1], ':'  ; Is the second char a colon?
+    JZ _pinclude_non_rel_       ; Yes; non-relative
+_pinclude_rel_:
+    ; The filename is relative, so combine it with the current file's
+    ; drive and path.
+    MOV DI, INFILE + 1  ; We will write it into INFILE/OUTFILE.
+    CLD
+    MOV BX, DI          ; BX will contain the position to append the
+    XOR CH, CH          ; new filename after
+    MOV SI, FILENAME_LEN
+    MOV CL, [SI]
+    INC SI
+    JCXZ _pinclude_rel_open_
+_pinclude_rel_loop_:
+    LODSB
+    CMP AL, ':'
+    JZ _pinclude_rel_mark_
+    CMP AL, '\'
+    JZ _pinclude_rel_mark_
+    STOSB
+    LOOP _pinclude_rel_loop_
+    JMP _pinclude_rel_open_
+_pinclude_rel_mark_:
+    STOSB
+    MOV BX, DI
+    LOOP _pinclude_rel_loop_
+_pinclude_rel_open_:
+    ; Now BX contains the position to append the new filename after
+    MOV DI, BX
+    XOR CH, CH
+    MOV SI, TOKEN + TOKEN_STRLEN
+    MOV CL, [SI]
+    INC SI
+    REP MOVSB                   ; Copy the filename
+    MOV BYTE PTR [DI], 0        ; Add a zero byte
+    LEA CX, [DI - INFILE - 1]   ; Compute the length
+    MOV BYTE PTR [INFILE], CL   ; And store it in [INFILE]
+    ; Now open the file
+    MOV AX, 3D00h
+    MOV DX, INFILE + 1
+    INT 21h
+    JC _pinclude_non_rel_
+    MOV SI, INFILE
+    JMP LEXER_INCLUDE
+_pinclude_nostr_:
+    JMP ERROR_EXPECTED_STRING
+_pinclude_noeol_:
+    JMP ERROR_EXPECTED_EOL
+_pinclude_error_open_:
+    JMP ERROR_FILE_OPEN_READ
+
+_pinclude_non_rel_:
+    ; Copy the file name to INFILE
+    XOR CH, CH
+    MOV SI, TOKEN + TOKEN_STRLEN
+    MOV CL, [SI]
+    INC CX
+    MOV DI, INFILE
+    REP MOVSB
+    MOV BYTE PTR [DI], 0    ; Add a zero byte
+    ; Now open the file
+    MOV AX, 3D00h
+    MOV DX, INFILE + 1
+    INT 21h
+    JC _pinclude_error_open_
+    MOV SI, INFILE
+    JMP LEXER_INCLUDE
+
 
 ; Procedure PARSE_ORG_DIRECTIVE_
 ; Parses an ORG directive
@@ -770,17 +882,20 @@ _psegarg_bracket_:
 ; Inputs:
 ;   DI the location of the buffer to store the argument in
 ; Destroys:
-;   AX, BX, CX, DX, SI, flags
+;   AX, BX, CX, DX, SI, BP, flags
 PARSE_BARE_PTR_ARG_:
+    XOR BP, BP          ; Adding offsets
     ; Parse the EA mode
-    PUSH DI
-    CALL LEXER_NEXT
-    POP DI
     XOR CX, CX          ; CH=BX/BP CL=SI/DI
     XOR AX, AX
     PUSH AX
     PUSH AX             ; Save DL:AX and DH in the stack
 _pbpa_loop_:            ; Parse the part in brackets
+    PUSH CX
+    PUSH DI
+    CALL LEXER_NEXT
+    POP DI
+    POP CX
     LD_TOKEN_TYPE
     CMP AL, TK_REGISTER     ; Register?
     JZ _pbpa_register_
@@ -793,45 +908,34 @@ _pbpa_loop_:            ; Parse the part in brackets
     CMP AL, TK_IDENTIFIER   ; identifier?
     JZ _pbpa_offset_
     JMP ERROR_EXPECTED_EA_PART
-_pbpa_parse_token_:
-    LD_TOKEN_TYPE
-    CMP AL, TK_RBRACKET     ; left bracket?
-    JZ _pbpa_loop_break_
-    CMP AL, TK_PLUS         ; plus sign?
-    JZ _pbpa_plus_
-    CMP AL, TK_MINUS        ; minus sign?
-    JZ _pbpa_loop_
-    JMP ERROR_EXPECTED_EA_END
 _pbpa_register_:
+    OR BP, BP
+    JNZ _pbpa_bad_reg_
     LD_TOKEN_VALUE
+    OR CH, CH
+    JNZ _pbpa_register_sidi_
     CMP AL, REG_BX
     JZ _pbpa_reg_bx_
     CMP AL, REG_BP
     JZ _pbpa_reg_bp_
+_pbpa_register_sidi_:
+    OR CL, CL
+    JNZ _pbpa_register_bad_
     CMP AL, REG_SI
     JZ _pbpa_reg_si_
     CMP AL, REG_DI
     JZ _pbpa_reg_di_
+_pbpa_register_bad_:
     JMP ERROR_EXPECTED_EA_PART
-_pbpa_reg_bx_:
-    CMP CH, 0
-    JNZ _pbpa_bad_reg_      ; only allow one BX
-    MOV CH, 1
-    JMP SHORT _pbpa_next_token_
 _pbpa_reg_bp_:
-    CMP CH, 0
-    JNZ _pbpa_bad_reg_      ; only allow one BP
-    MOV CH, 2
-    JMP SHORT _pbpa_next_token_
-_pbpa_reg_si_:
-    CMP CL, 0
-    JNZ _pbpa_bad_reg_      ; only allow one SI
-    MOV CL, 1
+    INC CH
+_pbpa_reg_bx_:
+    INC CH
     JMP SHORT _pbpa_next_token_
 _pbpa_reg_di_:
-    CMP CL, 0
-    JNZ _pbpa_bad_reg_      ; only allow one DI
-    MOV CL, 2
+    INC CL
+_pbpa_reg_si_:
+    INC CL
     JMP SHORT _pbpa_next_token_
 _pbpa_bad_reg_:
     JMP ERROR_EXPECTED_EA_ONE_REG
@@ -849,6 +953,10 @@ _pbpa_offset_:
     POP DI
     POP CX
     POP BX                  ; Add the parsed number
+    CMP BP, 1               ; Are we subtracting?
+    JNZ _pbpa_offset_add_
+    NEG AX
+_pbpa_offset_add_:
     ADD AX, BX
     POP BX
     CMP BH, LBL_NONE
@@ -857,13 +965,20 @@ _pbpa_offset_:
 _pbpa_noset_label_:
     PUSH DX
     PUSH AX
-    JMP _pbpa_parse_token_
+_pbpa_parse_token_:
+    LD_TOKEN_TYPE
+    CMP AL, TK_RBRACKET     ; right bracket?
+    JZ _pbpa_loop_break_
+    CMP AL, TK_PLUS         ; plus sign?
+    JZ _pbpa_plus_
+    CMP AL, TK_MINUS        ; minus sign?
+    JZ _pbpa_minus_
+    JMP ERROR_EXPECTED_EA_END
 _pbpa_plus_:
-    PUSH CX
-    PUSH DI
-    CALL LEXER_NEXT
-    POP DI
-    POP CX
+    XOR BP, BP              ; Using BP to mark an addition
+    JMP _pbpa_loop_
+_pbpa_minus_:
+    MOV BP, 1               ; Using BP to mark a subtraction
     JMP _pbpa_loop_
 
 _pbpa_loop_break_:          ; Done parsing; now make sense of it

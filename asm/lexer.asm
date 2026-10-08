@@ -1,22 +1,35 @@
-LX_FILE_HANDLE  DW -1           ; File handle for the lexer
-LXC_START:                      ; Start of the lexer context
-LINE            DW 0            ; Current line number
-LX_C            DB -1           ; Last read character (uppercase)
-LX_RAWC         DB -1           ; Last read character (raw)
-LX_EOF          DB 0            ; Reached end of file
-LX_EOL          DB 0            ; Reached end of line
 LX_BUFSIZE      EQU 1024        ; Size of the read buffer
-LX_BUFLEN       DW 0            ; Length of the read buffer
-LX_BUFPOS       DW 0            ; Position in the read buffer
-LX_EQUTOKEN     DW 0            ; Current token in EQU expansion
-LXC_END:                        ; End of the lexer context
 
 ; Procedure LEXER_START.
 ; Initializes the lexer context.
 ; Input:
 ;   AX the file handle
 LEXER_START:
+    PUSH AX
+    PUSH CX
+    PUSH SI
+    PUSH DI
+    PUSH ES
     MOV [LX_FILE_HANDLE], AX
+    ; Copy the input filename to FILENAME
+    PUSH DS
+    POP ES
+    MOV DI, FILENAME
+    MOV SI, INFILE
+_ls_loop_:
+    LODSB
+    STOSB
+    CMP AL, 0
+    JNZ _ls_loop_
+    MOV CX, DI
+    SUB CX, FILENAME
+    DEC CX
+    MOV [FILENAME_LEN], CL
+    POP ES
+    POP DI
+    POP SI
+    POP CX
+    POP AX
     JMP LEXER_RESTART
 
 ; Procedure LEXER_RESTART.
@@ -40,11 +53,13 @@ LEXER_RESTART:
     CLD
     XOR AX, AX
     REP STOSB
-    MOV [LINE], 1
+    MOV WORD PTR [LINE], 1
+    MOV WORD PTR [INCLUDE_TOP], INCLUDE_STACK
+    MOV WORD PTR [INCLUDE_STACK], 0     ; Mark the include stack as empty
 
     CALL LEXER_READNEXT_
     CALL LEXER_SKIPWHITESPACE_
-    MOV [LX_EOL], 0
+    MOV BYTE PTR [LX_EOL], 0
     RET
 _lr_error_seek_:
     JMP ERROR_SEEK
@@ -61,10 +76,10 @@ LEXER_NEXT:
     CMP SI, 0               ; Is there an EQU token?
     JNZ _ln_equ_            ; Yes, jump
 _ln_from_input_:
-    CMP [LX_EOF], 0         ; EOF?
+    CMP BYTE PTR [LX_EOF], 0    ; EOF?
     JNZ _ln_eof_            ; Yes, jump
     CALL LEXER_SKIPWHITESPACE_
-    CMP [LX_EOL], 0         ; End of line?
+    CMP BYTE PTR [LX_EOL], 0    ; End of line?
     JNZ _ln_eol_            ; yes, jump
     MOV AX, [LINE]          ; no; set the current position
     MOV WORD PTR [TOKEN + TOKEN_LINE], AX
@@ -78,11 +93,16 @@ _ln_eof_:
     MOV WORD PTR [TOKEN + TOKEN_LINE], AX
     MOV AL, [TOKEN + TOKEN_TYPE]
     CMP AL, TK_EOL          ; Output EOF if the previous
-    JZ _ln_reteof_             ; token was EOL or EOF;
+    JZ _ln_endincl_         ; token was EOL or EOF;
     CMP AL, TK_EOF          ; EOL otherwise
-    JZ _ln_reteof_
+    JZ _ln_endincl_
     MOV BYTE PTR [TOKEN + TOKEN_TYPE], TK_EOL
     RET
+_ln_endincl_:
+    CMP WORD PTR [INCLUDE_TOP], INCLUDE_STACK
+    JZ _ln_reteof_          ; return EOF if no includes in the stack
+    CALL LEXER_END_INCLUDE_
+    JMP _ln_from_input_
 _ln_reteof_:
     MOV BYTE PTR [TOKEN + TOKEN_TYPE], TK_EOF
     RET
@@ -111,6 +131,107 @@ _ln_endequ_:
     POP ES
     POP DS
     JMP _ln_from_input_     ; continue reading from the input
+
+; Procedure LEXER_INCLUDE
+; Starts reading tokens from the given file
+; Inputs:
+;   AX the file handle
+;   DS:SI the length-prefixed file name
+LEXER_INCLUDE:
+    ; Copy the current include context to the top of the stack
+    PUSH CX
+    PUSH DI
+    PUSH ES
+    CLD
+    PUSH DS
+    POP ES
+    PUSH SI
+    MOV SI, LXIC_START
+    MOV DI, [INCLUDE_TOP]
+    MOV CX, LXIC_END - LXIC_START
+    REP MOVSB
+    MOV [INCLUDE_TOP], DI
+    POP SI
+    ; Seek the input file to the current buffer position
+    ; Need to go back LX_BUFLEN-LX_BUFPOS bytes
+    MOV DX, [LX_BUFPOS]
+    SUB DX, [LX_BUFLEN]
+    JZ _li_noseek_
+    XOR CX, CX
+    DEC CX
+    PUSH AX
+    MOV AX, 4201h
+    MOV BX, [LX_FILE_HANDLE]
+    INT 21h
+    POP AX
+    JC _li_seek_error_
+_li_noseek_:
+    ; Set the new file handle and reset the context
+    MOV [LX_FILE_HANDLE], AX
+    MOV DI, LXC_START
+    MOV CX, LXC_END - LXC_START
+    CLD
+    XOR AX, AX
+    REP STOSB
+    MOV WORD PTR [LINE], 1
+    MOV WORD PTR [LX_BUFLEN], 0
+    MOV WORD PTR [LX_BUFPOS], 0
+    ; Copy the file name
+    MOV DI, FILENAME_LEN
+    XOR CH, CH
+    MOV CL, [SI]
+    INC CX
+    REP MOVSB
+    MOV BYTE PTR [DI], 0    ; And append a zero byte
+    POP ES
+    POP DI
+    POP CX
+    CALL LEXER_READNEXT_
+    CALL LEXER_SKIPWHITESPACE_
+    MOV BYTE PTR [LX_EOL], 0
+    RET
+_li_seek_error_:
+    JMP ERROR_SEEK
+
+; Procedure LEXER_END_INCLUDE_
+; Restores the top element of the include stack
+LEXER_END_INCLUDE_:
+    ; If there are no elements, return.
+    ; Should be an internal error, but we can handle it gracefully like this.
+    CMP WORD PTR [INCLUDE_TOP], INCLUDE_STACK
+    JZ _lei_ret_
+
+    PUSH AX
+    PUSH BX
+    PUSH CX
+    PUSH SI
+    PUSH DI
+    PUSH ES
+    ; Close the file
+    MOV AH, 3Eh
+    MOV BX, [LX_FILE_HANDLE]
+    INT 21h
+    ; Copy the top include context to the current one
+    CLD
+    PUSH DS
+    POP ES
+    MOV CX, LXIC_END - LXIC_START
+    MOV SI, [INCLUDE_TOP]
+    SUB SI, CX
+    MOV [INCLUDE_TOP], SI   ; Reset INCLUDE_TOP
+    MOV DI, LXIC_START
+    REP MOVSB
+    MOV BYTE PTR [LX_EOF], 0
+    MOV WORD PTR [LX_BUFLEN], 0
+    MOV WORD PTR [LX_BUFPOS], 0
+    POP ES
+    POP DI
+    POP SI
+    POP CX
+    POP BX
+    POP AX
+_lei_ret_:
+    RET
 
 ; Procedure LEXER_READTOKEN_
 ; Reads the next token from the input
@@ -162,7 +283,7 @@ LEXER_READSTRING_:
     CLD
 _lrs_next_:
     CALL LEXER_READNEXT_    ; Get the next character
-    CMP [LX_EOF], 0         ; If EOF, error
+    CMP BYTE PTR [LX_EOF], 0    ; If EOF, error
     JNZ _lrs_eof_
     MOV AL, [LX_RAWC]
     CMP AL, 39              ; If ', end of string
@@ -194,6 +315,7 @@ _lrs_toolong_:
 ; Destroys:
 ;   AX, BX, CX, DX, DI, flags
 LEXER_READNUMBER_:
+    PUSH BP
     MOV AL, [LX_C]
 _lrnum_skipzeros_:      ; Skip leading zeros
     CMP AL, '0'     ; If nonzero, start reading digits
@@ -280,6 +402,7 @@ _lrnum_decode_loop_:
 
     MOV WORD PTR [TOKEN + TOKEN_NUMBER], BX
 _lrnum_ret_:
+    POP BP
     RET
 _lrnum_invalid_:
     JMP ERROR_INVALID_DIGIT
@@ -324,7 +447,7 @@ _lri_done_:
     SUB AX, TOKEN + TOKEN_ID        ; Compute the length
     MOV [SI], AL                    ; and save it
 
-    CMP AL, 6                       ; Identifiers longer than 6
+    CMP AL, 7                       ; Identifiers longer than 7
     JA _lri_maybe_equ_              ; can only be EQU or identifiers
     CMP AL, 2                       ; Also shorter than 2
     JB _lri_maybe_equ_
@@ -366,9 +489,9 @@ _lri_toolong_:
 ; Destroys:
 ;   AH, BX, CX, DX, flags.
 LEXER_READNEXT_:
-    CMP [LX_EOF], 0         ; Exit if EOF
+    CMP BYTE PTR [LX_EOF], 0    ; Exit if EOF
     JNZ _lrn_ret_
-    CMP [LX_C], 0Ah         ; If LF, increment LINE and reset COL
+    CMP BYTE PTR [LX_C], 0Ah    ; If LF, increment LINE and reset COL
     JZ _lrn_eol_
 _lrn_read_:
     MOV BX, [LX_BUFPOS]     ; Buffer position in BX
@@ -389,7 +512,7 @@ _lrn_setc_:
 _lrn_ret_:
     RET
 _lrn_eol_:
-    INC [LINE]
+    INC WORD PTR [LINE]
     JMP SHORT _lrn_read_
 _lrn_readbuffer_:
     MOV AH, 3Fh             ; Read from file
@@ -421,10 +544,10 @@ _lrn_error_read_:
 ;   AX, BX, CX, DX, SI, flags
 LEXER_SKIPWHITESPACE_:
     XOR SI, SI          ; We'll use SI to carry EOL and is_comment
-    MOV [LX_EOL], 0
+    MOV BYTE PTR [LX_EOL], 0
     MOV AL, [LX_C]
 _lsws_start_:
-    CMP [LX_EOF], 0     ; On EOF we first return an EOL
+    CMP BYTE PTR [LX_EOF], 0    ; On EOF we first return an EOL
     JNZ _lsws_ret_with_eol_
     TEST SI, 2          ; Are we in a comment?
     JNZ _lsws_in_comment_
@@ -453,7 +576,7 @@ _lsws_other_:
     JNZ _lsws_ret_with_eol_
     RET
 _lsws_ret_with_eol_:
-    MOV [LX_EOL], 1
+    MOV BYTE PTR [LX_EOL], 1
     RET
 _lsws_newline_:
     TEST SI, 1          ; Are we in EOL already?

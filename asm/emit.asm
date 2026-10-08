@@ -19,6 +19,32 @@ _eorg_zero_:
     MOV [OC], AX
     JMP _eorg_set_
 
+; Procedure EMIT_ALIGN
+; Inputs:
+;   AX the alignment (positive power of 2)
+EMIT_ALIGN:
+    PUSH AX
+    PUSH BX
+    PUSH CX
+    CMP AX, 1               ; Less than 1?
+    JL _ealign_invalid_     ; Yes, invalid
+    MOV BX, AX
+    DEC BX
+    MOV CX, BX
+    AND CX, AX              ; AX & (AX - 1) == 0?
+    JNZ _ealign_invalid_    ; Yes, invalid
+    AND BX, [PC]            ; BX = [PC] mod BX
+    JZ _ealign_ret_         ; If zero, we are aligned
+    SUB AX, BX
+    ADD [PC], AX            ; Add the necessary padding
+_ealign_ret_:
+    POP CX
+    POP BX
+    POP AX
+    RET
+_ealign_invalid_:
+    JMP ERROR_INVALID_ARG
+
 ; Procedure EMIT_UNDEF
 ; Emits undefined bytes
 ; Inputs:
@@ -285,7 +311,7 @@ _adjoc_adjust_:
     PUSH DS
     POP ES
     CLD
-    XOR AL, AL
+    MOV AL, 90h             ; We'll pad with 90h (NOP)
     MOV BX, CX              ; Remaining bytes in BX
 _adjoc_loop_:
     MOV DX, OUT_BUFSIZE
