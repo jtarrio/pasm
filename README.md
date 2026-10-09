@@ -30,19 +30,17 @@ Execute the following script:
 ./build.sh
 ```
 
-You will get a `pasm.asm` file and a `pasmboot.com` file. This is your first native assembler, built using the bootstrap
-assembler. Now you need to use it to build your native assembler.
+You will get a `pasmboot.com` file. This is your native assembler, built using the bootstrap assembler.
+Now you need to use it to build your self-hosted assembler.
 
-Copy `pasmboot.com`, `bootstrp.bat`, and all the files in the `asm/` directory to your DOS machine, and then execute:
+Copy `pasmboot.com` and all the files in the `asm/` directory to your DOS machine, and then execute:
 
 ```shell
-BOOTSTRP
+PASMBOOT ASM/PASM.ASM PASM.COM
 ```
 
-This will generate `pasm2.com` (self-hosted assembler) and `pasm.com` (native assembler) and compare them to verify that
-they are identical.
-
-Now you can delete `bootstrp.bat`, `pasmboot.com` and `pasm2.com` to keep your assembler and its source code!
+This will generate `PASM.COM`, your self-hosted assembler. Now you can delete `PASMBOOT.COM` and use `PASM.COM` for
+all your needs.
 
 ---
 

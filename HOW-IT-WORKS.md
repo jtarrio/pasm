@@ -18,9 +18,9 @@ assembler is a complete reimplementation of PASM. (But this is not strictly nece
 compiler/assembler is just sufficient to compile the real compiler.)
 
 When I want to build PASM from scratch, first I assemble it with the bootstrap assembler, and the result is the
-"self-hosted assembler": a version of PASM that was built from the correct source code. However, it was built with the
-"wrong" compiler, so PASM needs to be built once more, using the self-hosted assembler. The result is the "native
-assembler".
+"native assembler": a version of PASM that was built from the correct source code. However, it was built with the
+"wrong" assembler, so PASM needs to be built once more, using the native assembler. The result is the "self-hosted
+assembler": a version of PASM built by itself from its own source code.
 
 In practical terms, you bootstrap PASM by first executing this:
 
@@ -28,7 +28,7 @@ In practical terms, you bootstrap PASM by first executing this:
 go run ./go/cmd/pasm asm/pasm.asm pasmboot.com
 ```
 
-This uses the bootstrap assembler and yields `pasmboot.com`, the self-hosted assembler.
+This uses the bootstrap assembler and yields `pasmboot.com`, the native assembler.
 
 Then you can copy `pasmboot.com` and all the source code to a DOS machine (or use an emulator) and execute this:
 
@@ -36,7 +36,7 @@ Then you can copy `pasmboot.com` and all the source code to a DOS machine (or us
 PASMBOOT ASM\PASM.ASM PASM.COM
 ```
 
-This uses the self-hosted assembler to build `PASM.COM`, the native assembler.
+This uses the native assembler to build `PASM.COM`, the self-hosted assembler.
 
 ## The lexical analyzer
 
@@ -181,9 +181,9 @@ algorithm that needs more memory than doing it in two passes.
 
 The source code can declare labels for code locations or data statements.
 
-When the PASM parser finds a label declaration, it takes the current value stored in `[PC]` and adds it to the labels
-table in pass 1; in pass 2, it compares the value of `[PC]` to the value in the labels table (this detects internal
-"phase" errors where a label changes addresses between passes.)
+When the PASM parser finds a label declaration, it looks at the program counter (which is kept by the code generator)
+and adds it to the labels table in pass 1. In pass 2, it compares the program counter to the value stored in the labels
+table. This detects any possible internal "phase" errors, where a label changes address between passes.
 
 When the PASM parser finds a reference to a label (for example, in a `MOV AX, my_data` instruction), it looks up the
 label name in the labels table. If it can't find the label during pass 1, it makes up a "dummy" value; if it happens
@@ -191,7 +191,7 @@ during pass 2, PASM displays a "label not found" error message.
 
 To make this work, the labels table is not cleared between passes: pass 1 populates the table, and pass 2 uses it.
 
-Labels have the following structure:
+Labels are stored in a hash table, keyed by name, and have the following structure:
 
 * Byte 0: `LABEL_TYPE` (1 byte) — the label's type.
 * Byte 1: `LABEL_ADDR` (2 bytes) — the address stored in the label.
@@ -199,22 +199,18 @@ Labels have the following structure:
 * Byte 5: `LABEL_NAMELEN` (1 byte) — the length of the label's name.
 * Bytes 6-: `LABEL_NAME` — the label's name.
 
-The valid label types are `LBL_NONE` (used in the parser to distinguish between numbers and labels), `LBL_ADDR` (an
-address of any size), `LBL_BYTEADDR`, `LBL_WORDADDR`, and `LBL_DWORDADDR`.
-
-Labels are stored in a hash table, which is described later.
+The valid label types are "none" (used in the parser to distinguish between labels and regular numbers), "address of a
+memory position of indeterminate size", "address of a byte", "address of a word", and "address of a dword".
 
 ## Macro expansion
 
-PASM has support for macros in the form of `EQU`.
+Macro expansion happens in the lexical analyzer. Normally, the lexical analyzer reads bytes from the input file and
+outputs tokens. However, during macro expansion, it returns previously stored tokens from a list. When the list of
+tokens ends, the lexical analyzer goes back to reading from the input file.
 
-Macro expansion happens in the lexer. Normally, the lexer reads bytes from the input file and outputs tokens. However,
-when it finds an identifier that has been defined as a macro, it switches to macro expansion mode by storing in
-`[LX_EQUTOKEN]` a pointer to the first token of the macro.
-
-When the lexer is in macro expansion mode, it copies the token pointed to by `[LX_EQUTOKEN]` into `[TOKEN]` and advances
-`[LX_EQUTOKEN]` to the next token. When it runs out of tokens, it sets `[LX_EQUTOKEN]` to zero, taking the lexer out of
-macro expansion mode.
+The parser recognizes macro definitions in the form `label EQU token ...`. When it finds one, it adds an entry to the
+macros hash table. Then, whenever the lexical analyzer finds an identifier that appears in the macros hash table, it
+doesn't emit it as a token. Instead, it loads the token list for that macro and starts macro expansion mode.
 
 Macro definitions have the following structure:
 
@@ -223,7 +219,23 @@ Macro definitions have the following structure:
 * Bytes 2-: `MACRO_NAME` — the macro's name.
 * Right after `MACRO_NAME`, zero or more tokens followed by a `0` byte.
 
-There is one macro type: `MAC_EQU`.
+There is one macro type, which denotes `EQU` macros.
+
+## Includes
+
+PASM also supports the `INCLUDE` directive, which serves to insert the content of another file in a source file. When
+a file is included, the state of the current file is added to the end of an "include stack" and the state is reset for
+the new file. When the new file ends, the state is reset from the include stack, which lets PASM continue parsing
+the previous file.
+
+When the parser finds an `INCLUDE` keyword followed by a file name, it opens the specified file and calls the
+`LEXER_INCLUDE` procedure, which does all the saving and replacing of the state. From that moment, the lexical analyzer
+reads tokens from the included file.
+
+When the lexical analyzer reaches the end of the file, it checks if the include stack is empty. If not, it recovers the
+previous file's state.
+
+The include stack lets you use the `INCLUDE` directive within included files.
 
 ## Hash tables
 
