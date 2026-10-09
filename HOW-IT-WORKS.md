@@ -6,27 +6,52 @@ it can assemble itself.
 This document explains how PASM was built and how it works. Hopefully it will help someone learn how to build their
 own assemblers and language compilers.
 
-## The parts of PASM
+## Bootstrapping
 
-PASM is divided in three parts: lexical analysis, parsing, and code generation.
+PASM was written in the assembly language; specifically, in the assembly language recognized by PASM, which is similar
+but not entirely compatible with MASM, TASM, NASM, and other assemblers.
 
-### Lexical analysis
+So how do I manage to build PASM? The answer is, "bootstrapping".
 
-During lexical analysis, PASM reads your assembly file and divides it into the different symbols and words that the
-assembly language recognizes. Each one of those symbols and words is called a "token". The lexical analyzer (or "lexer"
-for short) generates tokens for symbols such as the colon (`:`) or left bracket (`[`), for reserved words such as `ORG`
-or `MOV`, for user-defined identifiers such as `start` or `SALUTATION`, for numbers such as `100h` or `9`, strings such
-as `'Hello, world!'`, etc.
+I also built a version of PASM in the Go programming language (the "bootstrap assembler"). For PASM, this bootstrap
+assembler is a complete reimplementation of PASM. (But this is not strictly necessary: quite often, the bootstrap
+compiler/assembler is just sufficient to compile the real compiler.)
 
-You can see PASM's full list of tokens in the [GRAMMAR.md](GRAMMAR.md) file.
+When I want to build PASM from scratch, first I assemble it with the bootstrap assembler, and the result is the
+"self-hosted assembler": a version of PASM that was built from the correct source code. However, it was built with the
+"wrong" compiler, so PASM needs to be built once more, using the self-hosted assembler. The result is the "native
+assembler".
 
-The lexer has a 1024-byte buffer. When PASM starts, it opens your source file and reads the first 1024 bytes from it.
-Then the lexer reads from the buffer, advancing its position within. When it reaches the end, it reads the next 1024
-bytes into the buffer and moves the current position to the beginning. By using the buffer, PASM avoids calling into
-DOS for every single byte.
+In practical terms, you bootstrap PASM by first executing this:
 
-The procedure `LEXER_NEXT` causes the next token to be read from the source file and stored in `[TOKEN]` (the memory
-addressed by the label `TOKEN`). This memory has the following layout:
+```shell
+go run ./go/cmd/pasm asm/pasm.asm pasmboot.com
+```
+
+This uses the bootstrap assembler and yields `pasmboot.com`, the self-hosted assembler.
+
+Then you can copy `pasmboot.com` and all the source code to a DOS machine (or use an emulator) and execute this:
+
+```shell
+PASMBOOT ASM\PASM.ASM PASM.COM
+```
+
+This uses the self-hosted assembler to build `PASM.COM`, the native assembler.
+
+## The lexical analyzer
+
+PASM has three major parts: the lexical analyzer, the parser, and the code generator.
+
+The lexical analyzer reads the assembly file and outputs "tokens" that represent the different symbols and words
+that compose a program in assembly language.
+
+There are tokens for symbols such as the colon (`:`) or left bracket (`[`), for reserved words such as `ORG` or `MOV`,
+for identifiers such as `start` or `BUFFER`, for numbers such as `42` or `100h`, and for strings such as
+`'Hello, world!'`. The [GRAMMAR.md](GRAMMAR.md) file contains a full list of tokens.
+
+Whenever PASM needs to read a new token, it calls the procedure called `LEXER_NEXT`, which reads the source code and
+emits a token by storing it in `[TOKEN]` (the memory buffer addressed by the label `TOKEN`). Tokens have the following
+layout in memory:
 
 * Byte 0: `TOKEN_TYPE` (1 byte) — the token's type
 * Byte 1: `TOKEN_LINE` (2 bytes) — the line where the token appears
@@ -35,88 +60,86 @@ addressed by the label `TOKEN`). This memory has the following layout:
     * For segment tokens: `TOKEN_SEGMENT` (1 byte) — the index of the segment.
     * For keyword tokens: `TOKEN_KEYWORD` (1 byte) — the index of the keyword.
     * For number tokens: `TOKEN_NUMBER` (2 bytes) — the number's value.
-    * For identifier tokens: `TOKEN_IDLEN` (1 byte) — the identifier's length.
-    * For string tokens: `TOKEN_STRLEN` (1 byte) — the string's length.
+    * For identifier tokens: `TOKEN_IDLEN` (1 byte) — the identifier's length (up to 64).
+    * For string tokens: `TOKEN_STRLEN` (1 byte) — the string's length (up to 255).
 * Bytes 4-: depend on the token type:
     * For identifier tokens: `TOKEN_ID` — the identifier's name.
     * For string tokens: `TOKEN_STR` — the content of the string.
 
-A string's maximum length is 255; the maximum length of an identifier has been arbitrarily set to 64. Therefore, the
-maximum length of a token is 259 bytes.
+There are token types for the end of the file, the end of a line, symbols such as brackets or parentheses, register
+names, segment names, directives, instructions, numbers, and strings.
 
-The token types are `TK_EOF` (end of file), `TK_EOL` (end of line), `TK_LBRACKET`, `TK_RBRACKET`, `TK_LPAREN`,
-`TK_RPAREN`, `TK_PLUS`, `TK_MINUS`, `TK_COMMA`, `TK_COLON`, `TK_REGISTER`, `TK_SEGMENT`, `TK_KEYWORD`, `TK_NUMBER`,
-`TK_IDENTIFIER`, and `TK_STRING`.
+`LEXER_NEXT` works by reading from the input file one character at a time. (In reality it uses a 1024-byte buffer to
+avoid having to call into DOS for every single character.) First, it skips any whitespace and comments it finds. When
+it reaches the first non-whitespace character, it checks if it encountered any newline characters and emits an "end of
+line" token if so. Otherwise, it checks if it reached the end of the file and emits an "end of file" token if so.
 
-`LEXER_NEXT` starts by skipping all whitespace and comments. If, while it's skipping whitespace, it finds a newline
-character, it sets an "eol" flag. When it's reached the end of the whitespace, if the "eol" flag is set, it sets the
-token's type to `TK_EOL` and returns immediately.
+Next, it looks at the non-whitespace character.
 
-Then, it checks whether it has reached the end of the input file. If so, it checks whether the previous token was an EOL
-token. If not, it sets the type to `TK_EOL` and returns. Otherwise, it sets the type to `TK_EOF` and returns. This
-ensures that `LEXER_NEXT` always returns an EOL before an EOF, which makes parsing much easier.
-
-Then, it reads the first non-whitespace character.
-
-* If it's a special character (`[`, `]`, `(`, `)`, `+`, `-`, `,`, `:`), it stores a token of the appropriate type.
-* If it's a digit (`0`-`9`), it starts reading a number.
-* If it's a character in the `A`-`Z` range or an underscore (`_`), it starts reading an identifier.
+* If it's one of the recognized symbols, such as a bracket, colon, or plus sign, it emits a token of the appropriate
+  type.
+* If it's an alphabetic character (`A`-`Z`) or an underscore (`_`), it starts reading an identifier.
+* If it's a decimal digit (`0`-`9`) it starts reading a number.
 * If it's a single quote (`'`), it starts reading a string.
-* If it's none of these, it outputs an error message and exits.
+* If it's none of these, it outputs an error message and PASM exits.
 
-To read a number, the lexer first skips all leading zeros, then reads all decimal digits (`0`-`9`) and hexadecimal
-digits (`A`-`F`), stopping after an `H` or `O` or when it finds any other character. Then it checks the last
-character it read to determine the number's base, and finally it decodes the number into a 16-bit value, storing it in
-the token's `TOKEN_NUMBER` field and giving the token the type `TK_NUMBER`.
+To read an identifier, the lexical analyzer keeps reading characters and adding them to the identifier as long as they
+are alphabetic characters, decimal digits, or underscores. When it finds any character that doesn't fit, it stops
+reading
+and emits the token.
 
-To read an identifier, the lexer reads all characters in the ranges `A`-`Z`, `0`-`9` and underscores (`_`) until it
-finds any other character. Then it checks if it's one of the register names (if so, it stores its index in
-`TOKEN_REGISTER` and sets the token's type to `TK_REGISTER`), one of the segment names (index in `TOKEN_SEGMENT` and
-type `TK_SEGMENT`), one of the keywords (index in `TOKEN_KEYWORD` and type `TK_KEYWORD`), or a macro's name (see "macro
-expansion" below). If it's none of those, it stores the identifier's length in `TOKEN_IDLEN`, the identifier itself in
-`TOKEN_ID`, and sets the token's type to `TK_IDENTIFIER`.
+To read a number, the lexical analyzer reads decimal digits and letters from `A` to `F`, stopping after encountering
+an `H` or an `O`, or when it finds any other character. Then it parses the number (outputting an error and exiting if
+the number cannot be parsed) and emits the token.
 
-### Parsing
+To read a string, the lexical analyzer reads characters until it finds another single quote, exiting with an error if
+there is a newline character or the string is too long, and then it emits the token
 
-PASM uses a recursive descent parser. It is composed of several procedures, each one of which implements a grammar rule.
+## The parser
 
-You can see a description of PASM's grammar rules in the [GRAMMAR.md](GRAMMAR.md) file.
+You can see PASM's grammar in the [GRAMMAR.md](GRAMMAR.md) file.
 
-PASM's parser drives the code generator directly. Other assemblers might use the parser to build a parse tree, and then
-drive the code generator from the parse tree, but PASM is designed to be very simple and run in slow machines with
-little memory.
+PASM uses a recursive descent parser. It contains several procedures, and each one of them implements one of the grammar
+rules, calling into other procedures as needed. For example, the procedure that implements the rule
+`statement := prefix instruction ;` calls the procedure for the prefix first, and then the procedure for the
+instruction.
 
-The first procedure in the parser is `PARSE_SOURCE_`. It calls `LEXER_NEXT` and checks if the token is a `TK_EOF` token.
-If so, parsing is done. Otherwise, it will call `PARSE_LINE_` and, when this procedure returns, it will go to the top
-and keep going until it receives a `TK_EOF` token.
+The "root" procedure in the parser is `PARSE_SOURCE_`, which calls `PARSE_LINE_` repeatedly until it encounters an "end
+of file" token.
 
-`PARSE_LINE_` expects to have its first token already available in `[TOKEN]`. If it's an identifier, it calls
-`PARSE_LABELED_STMT_` to execute the "labeled_statement" grammar rule; if it's an `ORG` keyword, it calls
-`PARSE_ORG_DIRECTIVE_` to execute the "org_directive" grammar rule; if it's a keyword, it calls `PARSE_STATEMENT_`. If
-it's none, it displays an error message and causes PASM to exit.
+In some compilers, the parser generates a "syntax tree" that can be then transformed for optimizations and then used to
+execute the code generator. Not in PASM: since it needs to run in slow computers with little memory, the parser drives
+the code generator directly.
 
-Parsing continues in this way, calling into other procedures and loading the next token until each parsing procedure
-reaches its end or finds a token that does not fit the grammar.
+As an example, the `PARSE_STATEMENT_` procedure parses a keyword followed by two arguments, and when it has all that
+information, it calls the `EMIT_INSTRUCTION` procedure.
 
-As a more complex example, consider the `PARSE_STATEMENT_` procedure, which parses instructions.
+## The code generator
 
-It checks if the current token is a keyword token for one of the instruction prefixes; if so, it calls into the code
-generator to emit that prefix, and then it loads the next token and keeps checking for prefixes. When it reaches a
-non-prefix keyword token, it checks if it's `DB`, `DW`, or `DD`, and calls `PARSE_DATA_STMT_` if so. Otherwise, it loads
-the next token and then checks if it's `TK_EOL`. If so, it means that the instruction has no arguments, so it calls into
-the code generator to emit the instruction.
+There are several `EMIT_*` subroutines: `EMIT_BYTE`, `EMIT_WORD`, `EMIT_DWORD` (used for `DB`, `DW`, and `DD`,
+respectively), `EMIT_PREFIX`, `EMIT_ORG`, `EMIT_ALIGN`, several more that I've forgotten, and `EMIT_INSTRUCTION`.
 
-Otherwise, it calls `PARSE_ARGUMENT_` to parse the first argument. When this procedure returns, it leaves the next token
-after the argument in `[TOKEN]`, so `PARSE_STATEMENT_` can check if it's `TK_EOL` (which means a single-argument
-instruction, so it calls into the code generator) or `TK_COMMA`, which means that another argument follows. So it gets
-the next token and then calls `PARSE_ARGUMENT_` again to read the second argument. When it returns, the next token
-should be `TK_EOL`.
+The code generator keeps track of the memory address where the next bytes will go (the "program counter"). This
+information is used to populate labels and compute jump displacements. Separately, it also keeps track of the memory
+address for which the last bytes were output (the "output counter"). This lets the code generator emit "undefined bytes"
+that don't occupy space in the program file.
 
-I will avoid describing `PARSE_ARGUMENT_` in detail (you can look at the source code and the [GRAMMAR.md](GRAMMAR.md)
-file), but I will describe its output, since arguments are very important for the code generator.
+The `EMIT_BYTE`/`_WORD`/`_DWORD`/`_STRING`, etc., procedures are very simple: output the given byte/word/dword/string
+and advance the program counter and output counter.
 
-This procedure parses the argument and stores its parsed value in `[DI]` (the memory position addressed by the `DI`
-register.) The argument has the following layout:
+The `EMIT_INSTRUCTION` procedure is more complicated, since it has to encode an instruction with up to two arguments.
+There are many ways to do it: some instructions take no arguments and are encoded as a single byte, other instructions
+take one argument but are also encoded in one byte, and some instructions can be encoded in 1, 2, 3, 4, 5, or 6 bytes.
+
+Fortunately, all the different ways in which an instruction can be encoded can be classified into 15 patterns, so there
+is a table (`INSTR_TABLE`) that associates each instruction (`MOV`, `PUSH`, `XCHG`, `STOSB`, etc.) to one of the
+patterns, along with the opcode numbers and other data specific to the instruction.
+
+Each pattern has an associated procedure that implements it. Most of those procedures start by checking the number of
+arguments, making adjustments in them as needed, and then checking the types of the arguments to see how to encode the
+instruction.
+
+The arguments are stored in `[ARG1]` and `[ARG2]`, and they have the following layout in memory:
 
 * Byte 0: `ARG_TYPE` (1 byte) — the type and size of the argument. The following bytes depend on this.
 * For byte-sized numbers:
@@ -141,65 +164,20 @@ register.) The argument has the following layout:
     * Byte 1: `ARG_STRLEN` (1 byte) — the string's length.
     * Bytes 2-: `ARG_STR` — the content of the string.
 
-The argument type is a bit mask, where the low bits indicate if the argument is a number, register, segment, pointer, or
-string, and the high bits indicate if the argument has byte size, word size, or dword size. If zero bits are set, the
-argument is empty.
+The argument type is a bit mask where the 5 low bits indicate the argument type and the 3 high bits its size. If no bits
+are set, the argument is not present.
 
-The register and segment representations are the same used in the 8086's instruction encoding. Same goes for the
-effective address, except that it has some additional bits to indicate if there is an offset and its size.
+## Two passes
 
-### Code generation
+PASM is a two-pass assembler. This means that it does the whole lexical analysis - parsing - code generation process
+twice. On the first pass, it computes the locations of all the labels without generating code; on the second pass, it
+outputs the generated code using all the information it got in the first pass.
 
-PASM generates code in two passes: it reads and parses the input file twice, and on each pass, the parser calls into the
-code generator. On the first pass, the code generator computes the addresses of all the labels; on the second pass, the
-code generator writes machine code to the output file.
+Some assemblers can work on a single pass: they can leave "markers" when they find references to a label they have not
+seen yet, and then they can fill in those markers when they find where the label is. However, it is a more complicated
+algorithm that needs more memory than doing it in two passes.
 
-It is possible, and it would be faster, to generate code in one pass: write machine code, writing zeroes where the value
-of a label is not known, and then come back and overwrite them when all labels are known. However, it is more
-complicated and requires more memory, so PASM uses a two-pass design.
-
-The code generator consists of several procedures with names that start with `EMIT_`: `EMIT_ORG`, `EMIT_BYTE`,
-`EMIT_WORD`, `EMIT_DWORD`, `EMIT_STRING`, `EMIT_PREFIX`, and `EMIT_INSTRUCTION`. These procedures, in turn, call into
-other procedures to help them do their jobs.
-
-The most basic procedures are `WRITE_BYTE_`, `WRITE_STRING_`, `WRITE_BYTES_`, etc. These procedures write to an internal
-buffer and, when that buffer is full, they save it to the output file ("flush") and empty the buffer. The `EMIT_BYTE`/
-`WORD`/`DWORD`/`PREFIX`/`ORG` procedures are implemented directly in terms of calls to `WRITE_BYTE_`.
-
-The `EMIT_INSTRUCTION` procedure, however, is more complicated. PASM recognizes 112 instructions, all of them with their
-own combinations of parameters that they'll accept, and their own scheme for encoding into machine code. For example,
-some instructions take no arguments and can be encoded directly as a single byte (`POPF`, `IRET`, `XLAT`, etc.), others
-take one argument but can also be encoded as one byte (`PUSH AX`, `INT 3`), and others take one or more arguments and
-are encoded in a variable number of bytes (for example, `MOV AX, 3` takes 2 bytes, while `MOV BX, 3` takes 3.)
-
-Thankfully, the instruction encodings can be classified into several patterns. For example, `AND`, `CMP`, `SUB`, and
-`XOR` are all encoded in the same way, but with different opcodes, so we can use the same procedure to encode them; we
-only need to provide parameters that indicate what opcodes to use. This is achieved through a two-level dispatch table.
-
-When `EMIT_INSTRUCTION` is called, it receives the instruction's index in register `AL`, and the values of the two
-arguments (if provided) in `[ARG1]` and `[ARG2]`. Then it looks up the instruction in the first table, `INSTR_TABLE`,
-which yields a pointer to an entry of the second table. Those entries contain the address of the encoding procedure for
-the pattern, followed by the parameters it requires to encode the particular instruction. Then, `EMIT_INSTRUCTION` loads
-the types of arguments 1 and 2 in `AL` and `AH`, and the address of the instruction's encoding parameters in `BP`, and
-then calls into the encoding procedure.
-
-Most encoding procedures start by checking that the instruction has the appropriate number of arguments (by checking if
-`AL` and `AH` contain all-zeros).
-
-Next, many of them do distance and size adjustments. For example, for `MOV AX, [BP]`, the first argument contains a
-word-sized register and the second argument contains an unknown-size pointer, but the function can modify the type of
-the second argument to have word size too.
-
-Next, the encoding procedure checks the types of the arguments and writes the appropriate bytes. For some instructions,
-it calls `EMIT_BYTE` or `EMIT_WORD` as appropriate; for more complex instructions, there are specialized procedures such
-as `IP_RM_WIDTH2_` (emits a Mod-R/M instruction whose opcode depends on the width of the two arguments) or
-`IP_SHORTJMP_` (emits a short-jump instruction).
-
-The code emitter keeps track of the current position within the output file in the `[PC]` variable, which advances as
-more bytes and instructions are emitted. This lets the parser obtain the address for a label, or the code emitter
-compute displacement values.
-
-### Labels
+## Labels
 
 The source code can declare labels for code locations or data statements.
 
@@ -226,7 +204,7 @@ address of any size), `LBL_BYTEADDR`, `LBL_WORDADDR`, and `LBL_DWORDADDR`.
 
 Labels are stored in a hash table, which is described later.
 
-### Macro expansion
+## Macro expansion
 
 PASM has support for macros in the form of `EQU`.
 
@@ -247,7 +225,7 @@ Macro definitions have the following structure:
 
 There is one macro type: `MAC_EQU`.
 
-### Hash tables
+## Hash tables
 
 Label and macro definitions are stored in hash tables. Those tables are implemented as 256 buckets containing linked
 lists. The bucket number is calculated from the element's name using a Pearson hash function that returns a number
@@ -271,7 +249,8 @@ element" pointer in `DI`; otherwise, it returns a pointer to the element itself 
 element in.
 
 Therefore, to store a label, the code first needs to use `HASH_GET` to check if the label already exists and get the
-"next element" pointer, and then call `HASH_ADD`, save the label to the position it returns, and finally update the "first free byte" word:
+"next element" pointer. Then it needs to call `HASH_ADD`, save the label to the position it returns, and finally update
+the "first free byte" word:
 
 ```
 MOV ES, [LABELSEG]            ; Put the label segment in ES
